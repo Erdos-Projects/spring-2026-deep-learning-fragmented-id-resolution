@@ -1,0 +1,13 @@
+name: fragmented-id
+channels:
+  - pytorch
+  - defaults
+dependencies:
+  - python=3.9
+  - pytorch
+  - torchvision
+  - torchaudio
+  - scikit-learn
+  - pandas
+  - numpy
+  - pip
