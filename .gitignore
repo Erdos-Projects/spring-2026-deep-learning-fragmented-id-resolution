@@ -209,3 +209,6 @@ __marimo__/
 
 # PDFs
 *.pdf
+
+# ZIP files
+*.zip
