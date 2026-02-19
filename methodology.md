@@ -23,8 +23,8 @@ To ensure the model learns semantic similarity rather than simple string matchin
 
 * **Hard Positives:** Pairs that refer to the same entity but look significantly different (e.g., high edit distance due to abbreviations and nicknames).
 * **Hard Negatives:** Pairs that represent *different* entities but look highly similar.
-    * *Example:* Same Name and Address, but different Date of Birth (Simulating twins or clerical errors).
-    * *Example:* Same Last Name and Address, but different First Name (Simulating family members living together).
+    * *Example:* Same Name and Address, but different Date of Birth (simulating twins or clerical errors).
+    * *Example:* Same Last Name and Address, but different First Name (simulating family members living together).
 
 The final training set will consist of triplets or pairs: `(Anchor, Positive, Label=1)` and `(Anchor, Negative, Label=0)`.
 
