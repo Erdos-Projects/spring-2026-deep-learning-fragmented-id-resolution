@@ -133,15 +133,15 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Preprocess NCVoters TSV and generate attribute-level EDA statistics."
     )
-    parser.add_argument("--input", required=True, help="Path to ncvoters.tsv")
+    parser.add_argument("--input", default="data/raw/ncvoters.tsv", help="Path to ncvoters.tsv")
     parser.add_argument(
         "--prepared-output",
-        default="ncvoters_prepared.tsv",
+        default="data/processed/ncvoters_prepared.tsv",
         help="Path to write cleaned/preprocessed TSV"
     )
     parser.add_argument(
         "--stats-output",
-        default="ncvoters_attribute_stats.tsv",
+        default="data/processed/ncvoters_attribute_stats.tsv",
         help="Path to write attribute EDA metrics TSV"
     )
     parser.add_argument(

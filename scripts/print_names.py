@@ -4,7 +4,7 @@ import sys
 
 try:
     # Load the dataset
-    df = pd.read_csv('ncvoters.tsv', sep='\t', low_memory=False)
+    df = pd.read_csv('data/raw/ncvoters.tsv', sep='\t', low_memory=False)
 
     # Get the two rows to compare
     row1 = df.loc[df['id'] == 511079].iloc[0]
