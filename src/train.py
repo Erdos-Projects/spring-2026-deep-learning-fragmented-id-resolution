@@ -30,6 +30,7 @@ def train_one_epoch(
     optimizer: torch.optim.Optimizer,
     criterion: nn.Module,
     device: torch.device,
+    max_grad_norm: float = 1.0,
 ) -> float:
     """Train for one epoch, return average loss."""
     model.train()
@@ -45,6 +46,7 @@ def train_one_epoch(
         logits = model(input1, input2)
         loss = criterion(logits, labels)
         loss.backward()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
         optimizer.step()
 
         total_loss += loss.item()
@@ -133,21 +135,37 @@ def train_model(
     weight_decay: float = 1e-4,
     patience: int = 5,
     label_smoothing: float = 0.05,
+    max_grad_norm: float = 1.0,
 ) -> Dict[str, list]:
     """
-    Full training loop with cosine LR schedule and early stopping.
+    Full training loop with ReduceLROnPlateau scheduling and early stopping.
 
     Returns:
         history: dict with train/val metrics per epoch
     """
     model = model.to(device)
 
+    # ── Compute pos_weight from actual class distribution ──
+    n_pos, n_neg = 0, 0
+    for batch in train_loader:
+        labels = batch["label"]
+        n_pos += labels.sum().item()
+        n_neg += (1 - labels).sum().item()
+    pw = n_neg / max(n_pos, 1)
+    print(f"Class distribution: {int(n_pos)} pos, {int(n_neg)} neg → pos_weight={pw:.2f}")
+
     criterion = nn.BCEWithLogitsLoss(
-        pos_weight=torch.tensor([1.0]).to(device)  # adjust if class imbalanced
+        pos_weight=torch.tensor([pw]).to(device)
     )
 
+    # ── Apply label smoothing to targets during training ──
+    smooth_pos = 1.0 - label_smoothing
+    smooth_neg = label_smoothing
+
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=n_epochs)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, mode="min", factor=0.5, patience=3, min_lr=1e-6
+    )
 
     history = {"train_loss": [], "val_loss": [], "val_f1": [], "val_auc": []}
     best_val_loss = float("inf")
@@ -155,9 +173,30 @@ def train_model(
     wait = 0
 
     for epoch in range(1, n_epochs + 1):
-        train_loss = train_one_epoch(model, train_loader, optimizer, criterion, device)
+        # ── Train with label smoothing ──
+        model.train()
+        total_loss = 0.0
+        n_batches = 0
+        for batch in train_loader:
+            input1 = batch["input1"].to(device)
+            input2 = batch["input2"].to(device)
+            labels = batch["label"].to(device)
+            # Apply label smoothing
+            smoothed = labels * smooth_pos + (1 - labels) * smooth_neg
+
+            optimizer.zero_grad()
+            logits = model(input1, input2)
+            loss = criterion(logits, smoothed)
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
+            optimizer.step()
+
+            total_loss += loss.item()
+            n_batches += 1
+
+        train_loss = total_loss / max(n_batches, 1)
         val_metrics = evaluate(model, val_loader, criterion, device)
-        scheduler.step()
+        scheduler.step(val_metrics["loss"])
 
         history["train_loss"].append(train_loss)
         history["val_loss"].append(val_metrics["loss"])

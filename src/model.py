@@ -46,6 +46,7 @@ class CharCNNEncoder(nn.Module):
         self.dropout = nn.Dropout(dropout)
         total_filters = num_filters * len(kernel_sizes)
         self.fc = nn.Linear(total_filters, output_dim)
+        self.layer_norm = nn.LayerNorm(output_dim)
 
     def forward(self, x: torch.LongTensor) -> torch.Tensor:
         """
@@ -65,7 +66,7 @@ class CharCNNEncoder(nn.Module):
 
         cat = torch.cat(conv_outs, dim=1)   # (batch, total_filters)
         cat = self.dropout(cat)
-        out = self.fc(cat)                  # (batch, output_dim)
+        out = self.layer_norm(self.fc(cat))  # (batch, output_dim)
         return out
 
 
@@ -115,6 +116,16 @@ class SiameseMatchingNetwork(nn.Module):
             nn.Dropout(dropout),
             nn.Linear(classifier_hidden_dim // 2, 1),
         )
+
+        self._init_weights()
+
+    def _init_weights(self):
+        """Xavier initialization for the classifier to improve gradient flow."""
+        for m in self.classifier.modules():
+            if isinstance(m, nn.Linear):
+                nn.init.xavier_uniform_(m.weight)
+                if m.bias is not None:
+                    nn.init.zeros_(m.bias)
 
     def encode(self, x: torch.LongTensor) -> torch.Tensor:
         """Encode a single record (for candidate retrieval / ANN search)."""

@@ -44,7 +44,7 @@ class RecordPairDataset(Dataset):
         if fields is None:
             fields = [
                 "first_name", "middle_name", "last_name", "name_suffix",
-                "street_address", "city", "zip5",
+                "street_address", "city", "zip5", "birth_year",
             ]
         self.fields = fields
 
