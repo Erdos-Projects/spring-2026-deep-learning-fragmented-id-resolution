@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 class Encoder(nn.Module):
     def __init__(self, vocab_size, embedding_dim, hidden_dim, n_layers=1, dropout=0.1):

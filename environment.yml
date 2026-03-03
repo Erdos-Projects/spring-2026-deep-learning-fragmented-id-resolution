@@ -10,4 +10,6 @@ dependencies:
   - scikit-learn
   - pandas
   - numpy
+  - tqdm
+  - pytest
   - pip
