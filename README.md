@@ -77,6 +77,16 @@ Use extended attributes:
 python src/train.py --attribute-set extended --run-dir models/runs/extended_id_disjoint
 ```
 
+Run both baseline and extended as an ablation and keep the best by monitor metric:
+
+```bash
+python src/run_ablations.py ^
+  --split-strategy id_disjoint ^
+  --seed 42 ^
+  --monitor-metric pr_auc ^
+  --run-root models/runs/ablations
+```
+
 Use pair-random split (baseline comparison):
 
 ```bash
