@@ -141,6 +141,54 @@ Metrics reported:
 - ROC-AUC
 - PR-AUC
 - Confusion matrix (`tn`, `fp`, `fn`, `tp`)
+
+## TF-IDF Distance Baseline
+
+This is the non-deep baseline for fair comparison against the Siamese model:
+
+1. Serialize each record independently
+2. Embed records with TF-IDF n-grams
+3. Optionally apply blocking on candidate pairs
+4. Compute cosine distance between record embeddings
+5. Predict duplicate when distance is at or below a validation-tuned threshold
+
+Run it on the same split artifact used by the Siamese model:
+
+```bash
+python src/baseline_tfidf.py ^
+  --data-path data/processed/ncvoters_prepared.tsv ^
+  --dpl-path data/raw/ncvoters_DPL.tsv ^
+  --ndpl-path data/raw/ncvoters_NDPL.tsv ^
+  --split-path data/processed/splits/id_disjoint_seed42.tsv ^
+  --attribute-set extended ^
+  --analyzer char ^
+  --ngram-min 2 ^
+  --ngram-max 4 ^
+  --blocking-keys first_name,age ^
+  --blocking-mode any ^
+  --threshold-selection f1 ^
+  --run-dir models/baselines/tfidf_id_disjoint
+```
+
+Disable blocking if you want a pure embedding-distance baseline:
+
+```bash
+python src/baseline_tfidf.py --split-path data/processed/splits/id_disjoint_seed42.tsv --blocking-keys none
+```
+
+Baseline outputs:
+
+- `baseline_metrics.json`
+- `baseline_metrics.tsv`
+- `val_distance_threshold_sweep.tsv`
+- `test_confusion_matrix.tsv`
+
+Suggested comparison:
+
+- Run the TF-IDF baseline and Siamese model on the same `id_disjoint` split
+- Compare Precision / Recall / F1 / PR-AUC on the test split
+- Inspect hard positives and hard negatives where TF-IDF fails but Siamese succeeds
+
 ## Tests
 
 ```bash
