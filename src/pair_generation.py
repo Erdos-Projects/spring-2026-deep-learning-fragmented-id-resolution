@@ -120,6 +120,242 @@ def generate_block_negatives(
 
 # ── DPL/NDPL integration ───────────────────────────────────────────────────
 
+def generate_synthetic_hard_negatives(
+    df: pd.DataFrame,
+    n_negatives: int = 5000,
+    random_state: int = 42,
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Generate synthetic confusing non-match pairs by mixing attributes
+    between different real people.
+
+    Strategies:
+      1. **Same-last-name swap**: Two people with the same last name but
+         different first names → create a synthetic record that copies one
+         person's name onto another's address. The pair (original, synthetic)
+         is a NON-match despite sharing a last name + address.
+      2. **First-name collision**: Different people with the same first name,
+         similar zip — teaches the model that first-name alone isn't enough.
+      3. **Attribute-mix negatives**: Take person A's name fields and person B's
+         address fields → pair this chimera with person A. Forces the model to
+         verify ALL fields, not just names.
+
+    Returns:
+        pairs_df: DataFrame [id1, id2, label=0, source, group_id]
+        synthetic_df: DataFrame of chimeric records with unique IDs
+    """
+    rng = np.random.default_rng(random_state)
+    df = df.copy()
+
+    name_fields = ["first_name", "middle_name", "last_name", "name_suffix"]
+    addr_fields = ["street_address", "city", "zip5"]
+    all_fields = name_fields + addr_fields + ["birth_year"]
+
+    pairs = []
+    synthetic_rows = []
+    syn_counter = 0
+
+    # ── Strategy 1: Same-last-name, different person ──
+    last_name_groups = df.groupby("last_name")
+    for ln, group in last_name_groups:
+        if len(group) < 2 or ln.strip() == "":
+            continue
+        # Only use groups where first names differ (different people)
+        unique_first = group["first_name"].nunique()
+        if unique_first < 2:
+            continue
+
+        records = group.sample(n=min(len(group), 10), random_state=random_state).to_dict("records")
+        for i in range(len(records)):
+            for j in range(i + 1, len(records)):
+                if records[i]["first_name"] == records[j]["first_name"]:
+                    continue
+                # Create chimera: person i's name + person j's address
+                chimera = {}
+                for f in all_fields:
+                    chimera[f] = records[i].get(f, "")
+                for f in addr_fields:
+                    chimera[f] = records[j].get(f, "")
+                chimera["id"] = f"syn_hardneg_{syn_counter}"
+                chimera["is_synthetic"] = True
+                chimera["perturbation_types"] = "name_addr_chimera"
+                chimera["seed_id"] = records[i]["id"]
+                synthetic_rows.append(chimera)
+
+                # Pair chimera with person j (shares address but different person)
+                pairs.append({
+                    "id1": str(records[j]["id"]),
+                    "id2": chimera["id"],
+                    "label": 0,
+                    "source": "synthetic_hard_negative",
+                    "group_id": -1,
+                })
+                syn_counter += 1
+
+                if syn_counter >= n_negatives:
+                    break
+            if syn_counter >= n_negatives:
+                break
+        if syn_counter >= n_negatives:
+            break
+
+    # ── Strategy 2: First-name collision across different last names ──
+    remaining = n_negatives - syn_counter
+    if remaining > 0:
+        first_name_groups = df.groupby("first_name")
+        for fn, group in first_name_groups:
+            if len(group) < 2 or fn.strip() == "":
+                continue
+            unique_last = group["last_name"].nunique()
+            if unique_last < 2:
+                continue
+
+            records = group.sample(n=min(len(group), 6), random_state=random_state).to_dict("records")
+            for i in range(len(records)):
+                for j in range(i + 1, len(records)):
+                    if records[i]["last_name"] == records[j]["last_name"]:
+                        continue
+                    # Create chimera: person i's name + person j's address
+                    chimera = {}
+                    for f in all_fields:
+                        chimera[f] = records[i].get(f, "")
+                    for f in addr_fields:
+                        chimera[f] = records[j].get(f, "")
+                    chimera["id"] = f"syn_hardneg_{syn_counter}"
+                    chimera["is_synthetic"] = True
+                    chimera["perturbation_types"] = "firstname_collision"
+                    chimera["seed_id"] = records[i]["id"]
+                    synthetic_rows.append(chimera)
+
+                    pairs.append({
+                        "id1": str(records[j]["id"]),
+                        "id2": chimera["id"],
+                        "label": 0,
+                        "source": "synthetic_hard_negative",
+                        "group_id": -1,
+                    })
+                    syn_counter += 1
+
+                    if syn_counter >= n_negatives:
+                        break
+                if syn_counter >= n_negatives:
+                    break
+            if syn_counter >= n_negatives:
+                break
+
+    # ── Strategy 3: Attribute-mix (random cross-pollination) ──
+    remaining = n_negatives - syn_counter
+    if remaining > 0:
+        indices = rng.choice(len(df), size=(remaining, 2), replace=True)
+        for idx_a, idx_b in indices:
+            if idx_a == idx_b:
+                continue
+            row_a = df.iloc[idx_a]
+            row_b = df.iloc[idx_b]
+            if row_a["id"] == row_b["id"]:
+                continue
+
+            chimera = {}
+            for f in name_fields:
+                chimera[f] = str(row_a.get(f, ""))
+            for f in addr_fields:
+                chimera[f] = str(row_b.get(f, ""))
+            chimera["birth_year"] = row_a.get("birth_year", "")
+            chimera["id"] = f"syn_hardneg_{syn_counter}"
+            chimera["is_synthetic"] = True
+            chimera["perturbation_types"] = "attribute_mix"
+            chimera["seed_id"] = str(row_a["id"])
+            synthetic_rows.append(chimera)
+
+            # This chimera shares an address with row_b but is a different person
+            pairs.append({
+                "id1": str(row_b["id"]),
+                "id2": chimera["id"],
+                "label": 0,
+                "source": "synthetic_hard_negative",
+                "group_id": -1,
+            })
+            syn_counter += 1
+
+    pairs_df = pd.DataFrame(pairs).drop_duplicates(subset=["id1", "id2"]).reset_index(drop=True)
+    synthetic_df = pd.DataFrame(synthetic_rows) if synthetic_rows else pd.DataFrame()
+
+    return pairs_df, synthetic_df
+
+
+def generate_address_change_pairs(
+    gold_df: pd.DataFrame,
+    records_df: pd.DataFrame,
+    n_pairs: int = 3000,
+    random_state: int = 42,
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Generate positive pairs simulating a person moving to a different address.
+
+    Takes records from gold groups, clones each one with a randomly sampled
+    address from the full record pool, and labels the (original, clone) pair
+    as a match (label=1). This teaches the model that name + birth_year
+    alone can confirm identity even when address differs.
+
+    Returns:
+        pairs_df: DataFrame with columns [id1, id2, label, source, group_id]
+        synthetic_df: DataFrame of the cloned records (with new synthetic IDs)
+    """
+    rng = np.random.default_rng(random_state)
+
+    gold_records = gold_df[gold_df["silver_group_id"] >= 0].copy()
+    if gold_records.empty:
+        empty_pairs = pd.DataFrame(columns=["id1", "id2", "label", "source", "group_id"])
+        return empty_pairs, pd.DataFrame()
+
+    n_seed = min(n_pairs, len(gold_records))
+    seed_records = gold_records.sample(n=n_seed, random_state=random_state)
+
+    # Build address pool — all non-empty, non-placeholder addresses in the dataset
+    addr_cols = ["street_address", "city", "zip5"]
+    address_pool = (
+        records_df[addr_cols]
+        .dropna()
+        .drop_duplicates()
+        .reset_index(drop=True)
+    )
+    address_pool = address_pool[address_pool["street_address"].str.strip() != ""].reset_index(drop=True)
+
+    pairs = []
+    synthetic_rows = []
+
+    for i, (_, row) in enumerate(seed_records.iterrows()):
+        # Sample an address that differs from the record's current one
+        candidates = address_pool[address_pool["street_address"] != row.get("street_address", "")]
+        if candidates.empty:
+            continue
+        addr_row = candidates.iloc[rng.integers(0, len(candidates))]
+
+        syn_id = f"syn_addr_{i}"
+        new_row = row.to_dict()
+        new_row["id"] = syn_id
+        new_row["street_address"] = addr_row["street_address"]
+        new_row["city"] = addr_row["city"]
+        new_row["zip5"] = addr_row["zip5"]
+        new_row["is_synthetic"] = True
+        new_row["perturbation_types"] = "address_swap"
+        new_row["seed_id"] = row["id"]
+        new_row["silver_group_id"] = -1
+
+        synthetic_rows.append(new_row)
+        pairs.append({
+            "id1": str(row["id"]),
+            "id2": syn_id,
+            "label": 1,
+            "source": "address_change",
+            "group_id": -1,
+        })
+
+    synthetic_df = pd.DataFrame(synthetic_rows)
+    pairs_df = pd.DataFrame(pairs)
+    return pairs_df, synthetic_df
+
+
 def pairs_from_dpl(dpl: pd.DataFrame) -> pd.DataFrame:
     """Convert DPL DataFrame to standard pair format."""
     out = dpl[["id1", "id2"]].copy()

@@ -136,9 +136,14 @@ def train_model(
     patience: int = 5,
     label_smoothing: float = 0.05,
     max_grad_norm: float = 1.0,
+    best_metric: str = "f1",
 ) -> Dict[str, list]:
     """
     Full training loop with ReduceLROnPlateau scheduling and early stopping.
+
+    Args:
+        best_metric: Which metric to use for early stopping / model selection.
+                     "f1" (recommended for imbalanced data) or "loss".
 
     Returns:
         history: dict with train/val metrics per epoch
@@ -163,12 +168,18 @@ def train_model(
     smooth_neg = label_smoothing
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
+
+    # Use different scheduler modes depending on metric
+    scheduler_mode = "max" if best_metric == "f1" else "min"
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode="min", factor=0.5, patience=3, min_lr=1e-6
+        optimizer, mode=scheduler_mode, factor=0.5, patience=3, min_lr=1e-6
     )
 
-    history = {"train_loss": [], "val_loss": [], "val_f1": [], "val_auc": []}
-    best_val_loss = float("inf")
+    history = {
+        "train_loss": [], "val_loss": [], "val_f1": [], "val_auc": [],
+        "val_precision": [], "val_recall": [],
+    }
+    best_val_score = -float("inf") if best_metric == "f1" else float("inf")
     best_state = None
     wait = 0
 
@@ -196,12 +207,17 @@ def train_model(
 
         train_loss = total_loss / max(n_batches, 1)
         val_metrics = evaluate(model, val_loader, criterion, device)
-        scheduler.step(val_metrics["loss"])
+
+        # Schedule based on tracked metric
+        sched_val = val_metrics[best_metric] if best_metric in val_metrics else val_metrics["loss"]
+        scheduler.step(sched_val)
 
         history["train_loss"].append(train_loss)
         history["val_loss"].append(val_metrics["loss"])
         history["val_f1"].append(val_metrics["f1"])
         history["val_auc"].append(val_metrics["auc"])
+        history["val_precision"].append(val_metrics["precision"])
+        history["val_recall"].append(val_metrics["recall"])
 
         lr_now = optimizer.param_groups[0]["lr"]
         print(
@@ -210,18 +226,25 @@ def train_model(
             f"Val Loss: {val_metrics['loss']:.4f} | "
             f"Val F1: {val_metrics['f1']:.4f} | "
             f"Val AUC: {val_metrics['auc']:.4f} | "
+            f"Val P/R: {val_metrics['precision']:.3f}/{val_metrics['recall']:.3f} | "
             f"LR: {lr_now:.6f}"
         )
 
-        # Early stopping
-        if val_metrics["loss"] < best_val_loss:
-            best_val_loss = val_metrics["loss"]
+        # Early stopping based on chosen metric
+        current_score = val_metrics[best_metric] if best_metric in val_metrics else val_metrics["loss"]
+        if best_metric == "f1":
+            is_better = current_score > best_val_score
+        else:
+            is_better = current_score < best_val_score
+
+        if is_better:
+            best_val_score = current_score
             best_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
             wait = 0
         else:
             wait += 1
             if wait >= patience:
-                print(f"Early stopping at epoch {epoch} (patience={patience})")
+                print(f"Early stopping at epoch {epoch} (patience={patience}, best {best_metric}={best_val_score:.4f})")
                 break
 
     # Restore best model

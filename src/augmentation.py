@@ -103,6 +103,29 @@ SUFFIX_VARIANTS = {
 # ── Unit format variations ──────────────────────────────────────────────────
 UNIT_PREFIXES = ["APT", "UNIT", "STE", "#", "APARTMENT", "SUITE", "BLDG"]
 
+# ── Common phonetic substitution patterns ───────────────────────────────────
+PHONETIC_SUBS = {
+    "PH": "F", "F": "PH",
+    "CK": "K", "K": "CK",
+    "TION": "SHUN", "SHUN": "TION",
+    "EE": "EA", "EA": "EE",
+    "Y": "IE", "IE": "Y",
+    "SON": "SEN", "SEN": "SON",
+    "GH": "G", "G": "GH",
+    "AE": "E", "E": "AE",
+    "SC": "S", "S": "SC",
+    "LL": "L", "L": "LL",
+}
+
+# ── Common last names for married-name simulation ──────────────────────────
+COMMON_LAST_NAMES = [
+    "SMITH", "JOHNSON", "WILLIAMS", "BROWN", "JONES", "GARCIA", "MILLER",
+    "DAVIS", "RODRIGUEZ", "MARTINEZ", "HERNANDEZ", "LOPEZ", "GONZALEZ",
+    "WILSON", "ANDERSON", "THOMAS", "TAYLOR", "MOORE", "JACKSON", "MARTIN",
+    "LEE", "PEREZ", "THOMPSON", "WHITE", "HARRIS", "SANCHEZ", "CLARK",
+    "RAMIREZ", "LEWIS", "ROBINSON", "WALKER", "YOUNG", "ALLEN", "KING",
+]
+
 
 # ── Perturbation registry (each function is tagged for train/test splitting) ──
 
@@ -123,15 +146,22 @@ class PerturbationType:
     BLANK_SUFFIX = "blank_suffix"
     BLANK_UNIT = "blank_unit"
     HYPHEN_CHANGE = "hyphen_change"
+    ADDRESS_SWAP = "address_swap"  # same person, different address (moved)
+    PHONETIC_SUB = "phonetic_sub"  # phonetic misspelling (PH↔F, CK↔K)
+    MARRIED_NAME = "married_name"  # hyphenated married name (SMITH → SMITH-JONES)
+    TRUNCATION = "truncation"      # truncated name (CHRISTOPHER → CHRISTO)
+    CASE_NOISE = "case_noise"      # mixed case (ROBERT → Robert, roBERT)
 
     # Default split: train uses these, test holds out the rest
     TRAIN_TYPES = {
         NICKNAME, INITIAL, DROP_MIDDLE, TYPO_SWAP, SUFFIX_SWAP,
-        UNIT_FORMAT, BLANK_MIDDLE, WHITESPACE_NOISE,
+        UNIT_FORMAT, BLANK_MIDDLE, WHITESPACE_NOISE, ADDRESS_SWAP,
+        PHONETIC_SUB, TRUNCATION,
     }
     TEST_ONLY_TYPES = {
         TYPO_INSERT, TYPO_DELETE, TYPO_REPLACE,
         DIRECTIONAL_EXPAND, BLANK_SUFFIX, BLANK_UNIT, HYPHEN_CHANGE,
+        MARRIED_NAME, CASE_NOISE,
     }
 
 
@@ -200,6 +230,68 @@ def _hyphen_change(name: str, rng: np.random.Generator) -> Tuple[str, str]:
         return name.replace("-", " "), PerturbationType.HYPHEN_CHANGE
     if " " in name and len(name.split()) == 2:
         return name.replace(" ", "-"), PerturbationType.HYPHEN_CHANGE
+    return name, ""
+
+
+def _phonetic_sub(name: str, rng: np.random.Generator) -> Tuple[str, str]:
+    """Apply a phonetic substitution (e.g., PH↔F, CK↔K, SON↔SEN)."""
+    upper = name.upper()
+    applicable = [(old, new) for old, new in PHONETIC_SUBS.items() if old in upper]
+    if not applicable:
+        return name, ""
+    old, new = applicable[rng.integers(0, len(applicable))]
+    # Replace only the first occurrence
+    result = upper.replace(old, new, 1)
+    if result != upper:
+        return result, PerturbationType.PHONETIC_SUB
+    return name, ""
+
+
+def _married_name(name: str, rng: np.random.Generator) -> Tuple[str, str]:
+    """Simulate married name by appending/prepending a common last name with hyphen."""
+    if not name or len(name) < 2:
+        return name, ""
+    # Don't double-hyphenate
+    if "-" in name:
+        return name, ""
+    other = rng.choice(COMMON_LAST_NAMES)
+    # Avoid appending the same name
+    if other.upper() == name.upper():
+        other = rng.choice([n for n in COMMON_LAST_NAMES if n.upper() != name.upper()])
+    if rng.random() < 0.5:
+        return f"{name}-{other}", PerturbationType.MARRIED_NAME
+    else:
+        return f"{other}-{name}", PerturbationType.MARRIED_NAME
+
+
+def _truncation(name: str, rng: np.random.Generator) -> Tuple[str, str]:
+    """Truncate a long name (e.g., CHRISTOPHER → CHRISTO, ELIZABETH → ELIZA)."""
+    if len(name) < 5:
+        return name, ""
+    # Truncate to between 3 and len-2 characters
+    trunc_len = rng.integers(3, max(4, len(name) - 1))
+    return name[:trunc_len], PerturbationType.TRUNCATION
+
+
+def _case_noise(name: str, rng: np.random.Generator) -> Tuple[str, str]:
+    """Introduce mixed case (simulates inconsistent data entry)."""
+    if len(name) < 2:
+        return name, ""
+    mode = rng.integers(0, 3)
+    if mode == 0:
+        # Title case: ROBERT → Robert
+        result = name.capitalize()
+    elif mode == 1:
+        # Lower case: ROBERT → robert
+        result = name.lower()
+    else:
+        # Random case: ROBERT → rOBeRt
+        result = "".join(
+            c.lower() if rng.random() < 0.5 else c.upper()
+            for c in name
+        )
+    if result != name:
+        return result, PerturbationType.CASE_NOISE
     return name, ""
 
 
@@ -301,6 +393,9 @@ def augment_record(
         candidates.append(("first_name", "typo_delete", _typo_delete))
         candidates.append(("first_name", "typo_replace", _typo_replace))
         candidates.append(("first_name", "hyphen_change", _hyphen_change))
+        candidates.append(("first_name", "phonetic_sub", _phonetic_sub))
+        candidates.append(("first_name", "truncation", _truncation))
+        candidates.append(("first_name", "case_noise", _case_noise))
 
     if rec.get("last_name"):
         candidates.append(("last_name", "typo_swap", _typo_swap))
@@ -308,6 +403,9 @@ def augment_record(
         candidates.append(("last_name", "typo_delete", _typo_delete))
         candidates.append(("last_name", "typo_replace", _typo_replace))
         candidates.append(("last_name", "hyphen_change", _hyphen_change))
+        candidates.append(("last_name", "phonetic_sub", _phonetic_sub))
+        candidates.append(("last_name", "married_name", _married_name))
+        candidates.append(("last_name", "case_noise", _case_noise))
 
     if rec.get("middle_name"):
         candidates.append(("middle_name", "initial", lambda n, r: _to_initial(n)))
