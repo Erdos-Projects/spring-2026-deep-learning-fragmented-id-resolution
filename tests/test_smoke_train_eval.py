@@ -1,0 +1,120 @@
+import json
+import subprocess
+import sys
+
+import pandas as pd
+
+
+def _write_tsv(df, path):
+    df.to_csv(path, sep="\t", index=False)
+
+
+def _build_tiny_dataset(tmp_path):
+    prepared = pd.DataFrame(
+        [
+            {"id": "1", "first_name": "ann", "last_name": "lee", "house_num": "10", "street_name": "oak", "zip_code": "11111"},
+            {"id": "2", "first_name": "anne", "last_name": "lee", "house_num": "10", "street_name": "oak", "zip_code": "11111"},
+            {"id": "3", "first_name": "bob", "last_name": "ray", "house_num": "20", "street_name": "elm", "zip_code": "22222"},
+            {"id": "4", "first_name": "bobby", "last_name": "ray", "house_num": "20", "street_name": "elm", "zip_code": "22222"},
+            {"id": "5", "first_name": "cara", "last_name": "kim", "house_num": "30", "street_name": "maple", "zip_code": "33333"},
+            {"id": "6", "first_name": "cora", "last_name": "king", "house_num": "31", "street_name": "maple", "zip_code": "33333"},
+            {"id": "7", "first_name": "dan", "last_name": "zhu", "house_num": "40", "street_name": "pine", "zip_code": "44444"},
+            {"id": "8", "first_name": "danny", "last_name": "zhu", "house_num": "40", "street_name": "pine", "zip_code": "44444"},
+        ]
+    )
+    dpl = pd.DataFrame(
+        [
+            {"id1": "1", "id2": "2"},
+            {"id1": "3", "id2": "4"},
+            {"id1": "7", "id2": "8"},
+            {"id1": "5", "id2": "6"},
+        ]
+    )
+    ndpl = pd.DataFrame(
+        [
+            {"id1": "1", "id2": "3"},
+            {"id1": "1", "id2": "5"},
+            {"id1": "1", "id2": "7"},
+            {"id1": "2", "id2": "4"},
+            {"id1": "2", "id2": "6"},
+            {"id1": "2", "id2": "8"},
+            {"id1": "3", "id2": "5"},
+            {"id1": "3", "id2": "7"},
+            {"id1": "4", "id2": "6"},
+            {"id1": "4", "id2": "8"},
+            {"id1": "5", "id2": "7"},
+            {"id1": "6", "id2": "8"},
+        ]
+    )
+    prepared_path = tmp_path / "prepared.tsv"
+    dpl_path = tmp_path / "dpl.tsv"
+    ndpl_path = tmp_path / "ndpl.tsv"
+    _write_tsv(prepared, prepared_path)
+    _write_tsv(dpl, dpl_path)
+    _write_tsv(ndpl, ndpl_path)
+    return prepared_path, dpl_path, ndpl_path
+
+
+def test_smoke_train_then_evaluate(tmp_path):
+    prepared_path, dpl_path, ndpl_path = _build_tiny_dataset(tmp_path)
+
+    run_dir = tmp_path / "run"
+    split_path = tmp_path / "split.tsv"
+    train_cmd = [
+        sys.executable,
+        "src/train.py",
+        "--data-path",
+        str(prepared_path),
+        "--dpl-path",
+        str(dpl_path),
+        "--ndpl-path",
+        str(ndpl_path),
+        "--split-strategy",
+        "pair_random",
+        "--split-output",
+        str(split_path),
+        "--epochs",
+        "1",
+        "--batch-size",
+        "4",
+        "--run-dir",
+        str(run_dir),
+        "--disable-progress",
+        "--seed",
+        "7",
+    ]
+    subprocess.run(train_cmd, check=True)
+
+    checkpoint_path = run_dir / "best_model.pth"
+    metrics_json_path = run_dir / "best_metrics.json"
+    history_path = run_dir / "metrics_history.tsv"
+    assert checkpoint_path.exists()
+    assert metrics_json_path.exists()
+    assert history_path.exists()
+    assert split_path.exists()
+
+    with open(metrics_json_path, "r", encoding="utf-8") as f:
+        payload = json.load(f)
+    assert "test_metrics" in payload
+
+    eval_out_dir = tmp_path / "eval"
+    eval_cmd = [
+        sys.executable,
+        "src/evaluate.py",
+        "--model-path",
+        str(checkpoint_path),
+        "--split-path",
+        str(split_path),
+        "--split-name",
+        "test",
+        "--output-dir",
+        str(eval_out_dir),
+        "--output-prefix",
+        "smoke",
+        "--disable-progress",
+    ]
+    subprocess.run(eval_cmd, check=True)
+
+    assert (eval_out_dir / "smoke_test_metrics.json").exists()
+    assert (eval_out_dir / "smoke_test_metrics.tsv").exists()
+    assert (eval_out_dir / "smoke_test_confusion_matrix.tsv").exists()
