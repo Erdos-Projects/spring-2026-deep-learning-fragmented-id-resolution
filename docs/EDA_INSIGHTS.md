@@ -1,53 +1,89 @@
-# EDA and Preprocessing Insights: NCVoters Duplicate Detection
+# EDA and Pairing Insights: NCVoters Duplicate Detection
 
-This document outlines the data preprocessing requirements and strategies for the North Carolina Voters duplicate resolution project.
+This document summarizes the EDA conclusions that directly affect model and evaluation design.
 
-## 1. Inclusion and Exclusion Criteria
-Analysis of confirmed duplicate pairs (DPL) reveals that identity is preserved across record updates, but location is often not.
+## 1. Attribute Signal Quality
 
-### **Inclusion Criteria (High Signal)**
-*   **Identity Anchors:** `first_name`, `last_name`, `age`, and `sex`.
-    *   *Insight:* `age` and `first_name` match in **>97%** of duplicate records. These are the most stable features for deep learning.
-*   **Contextual Features:** `zip_code`, `street_name`, and `house_num`.
-    *   *Insight:* These only match in **~10%** of duplicates. Including them allows the model to learn that a change in address does *not* necessarily imply a different person (migration patterns).
-*   **Demographics:** `race_desc` and `ethnic_desc`. These provide additional disambiguation with high consistency (>64% match).
+High-signal identity anchors:
 
-### **Exclusion Criteria (Noisy/Administrative)**
-*   **Administrative Metadata:** `registr_dt`, `cancellation_dt`, `reason_cd`, and `status_cd`. 
-    *   *Rationale:* These are artifacts of the database management system. Including them risks the model learning "snapshot" patterns rather than human identity, leading to poor generalization on future data.
-*   **Sparsity Constraints:** `phone_num` and `area_cd`.
-    *   *Rationale:* These attributes are missing in **~60%** of the dataset. While potentially useful, their sparsity creates a "missing data" bias that can destabilize Transformer training.
+- `first_name`
+- `last_name`
+- `age`
+- `sex`
 
----
+Useful contextual fields (less stable but still informative):
 
-## 2. Transformation and Preprocessing Requirements
-Before the data enters the Siamese Transformer model, the following transformations are necessary:
+- `house_num`
+- `street_name`
+- `zip_code`
 
-*   **Tagged Serialization:** Instead of raw concatenation, records should be serialized with attribute tags (e.g., `fn: [FIRST] ln: [LAST]`). This explicitly helps the Attention mechanism distinguish between different semantic fields.
-*   **Null-Value Tokenization:** Empty strings should be replaced with a reserved `[NULL]` token. This prevents the model from collapsing field boundaries when data is missing.
-*   **Normalization:**
-    *   **Phonetic Encoding:** Implementing a Soundex or Metaphone layer for names can help the model handle "Hard Positives" (e.g., "Jon" vs "John").
-    *   **Address Standardization:** Mapping suffixes (Street -> St, Avenue -> Ave) is critical given the high variance in address matching found during EDA.
-*   **Subword Tokenization:** We recommend moving from character-level encoding to **Subword (BPE/WordPiece) Tokenization**. The mean serialized record length is **487 characters**, which is too long for efficient character-level RNNs but fits perfectly within the 512-token window of a Transformer.
+Additional disambiguation fields:
 
----
+- `race_desc`
+- `ethnic_desc`
 
-## 3. Data Splitting and Overfitting Mitigation
+Practical implication:
 
-### **Proposed Split**
-*   **Train:** 70% (~75,000 pairs)
-*   **Validation:** 15% (~16,000 pairs)
-*   **Test:** 15% (~16,000 pairs)
+- keep both baseline and extended attribute sets in experiments
+- do not rely only on address fields, because duplicates can move or be reformatted
 
-### **Overfitting Risks and Solutions**
-Deep Learning models for Entity Resolution overfit easily when the training set contains only "Easy Negatives."
-*   **Hard Negative Mining:** Our EDA shows that the current `ncvoters_NDPL.tsv` contains pairs with high Levenshtein distances (>6.0). To ensure the model doesn't overfit, we must generate "Hard Negatives"—records that share a last name and age but have different first names (e.g., siblings or twins).
-*   **Cluster-Based Splitting:** We will ensure that no individual record ID appears in both the training and testing sets. This prevents the model from "memorizing" specific individuals and forces it to learn the *logic* of similarity.
-*   **Class Balancing:** The current ratio of Non-Duplicates to Duplicates is **10:1**. We will use **Triplet Loss** or weighted cross-entropy to prevent the model from defaulting to a "Never a Duplicate" prediction.
+## 2. Blocking Implications
 
----
+Blocking is used as candidate generation, not clustering.
 
-## 4. Computational Efficiency: Blocking
-To avoid the $O(N^2)$ complexity of comparing every record, our EDA identifies a viable blocking strategy:
-*   **Primary Block:** `first_name` or `age`.
-*   *Justification:* Blocking by `first_name` retains **97.8%** of true duplicates while reducing the comparison space by several orders of magnitude. Traditional geographic blocking (by Zip Code) would fail, losing **85%** of the target duplicates.
+Shared blocking currently used in the controlled pipeline:
+
+- keys: `first_name,age`
+- mode: `any`
+
+Observed on the apples-to-apples test split:
+
+- positive pass rate: `1.0`
+- negative pass rate: `0.03495`
+- candidates after blocking: `303 / 2291`
+
+Practical implication:
+
+- blocking drastically cuts pair volume while preserving recall on this split
+- final claims should still report blocked and unblocked results separately
+
+## 3. Input Length and Encoding
+
+The Siamese model uses character-level encoding with `max_len`.
+
+Practical implication:
+
+- baseline attributes work well with smaller `max_len` values
+- extended attributes should use a larger `max_len` (for example `128`) to avoid truncation penalties
+
+## 4. Evaluation Design Requirements
+
+To avoid misleading conclusions:
+
+- use deterministic `id_disjoint` splits
+- evaluate both model families on the same split artifact
+- compare both scenarios:
+  - `pair_scoring` (no blocking)
+  - `blocked_pipeline` (shared blocking)
+
+Metrics to always report:
+
+- Precision
+- Recall
+- F1
+- PR-AUC
+- ROC-AUC
+
+## 5. Current Outcome Snapshot
+
+From `models/comparisons/apples_to_apples/comparison_summary.json`:
+
+- Siamese outperforms TF-IDF on test F1 in all matched settings
+- strongest run: `siamese + extended + blocked_pipeline`
+  - test F1: `0.9849`
+  - test PR-AUC: `0.9994`
+
+Interpretation:
+
+- TF-IDF remains a strong baseline
+- with matched conditions, the deep model provides a measurable gain

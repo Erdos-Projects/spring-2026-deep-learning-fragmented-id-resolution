@@ -422,9 +422,21 @@ Configuration summary:
 - analyzer: char n-grams `2..4`
 - blocking: `first_name OR age`
 
+### Apples-to-apples matrix run
+
+Directory:
+
+- `models/comparisons/apples_to_apples/`
+
+Contains:
+
+- `comparison_summary.tsv`
+- `comparison_summary.json`
+- per-run outputs under `siamese/` and `tfidf/` for each scenario and attribute set
+
 ## Important Caveats
 
-### 1. Older saved comparisons are not fully apples-to-apples
+### 1. Older single-run artifacts are not fully apples-to-apples
 
 The originally committed TF-IDF baseline uses:
 
@@ -438,7 +450,7 @@ The originally committed Siamese run uses:
 
 So those historical artifacts are informative, but not yet a perfectly fair head-to-head model comparison.
 
-The new shared blocking and comparison-matrix code is intended to fix that.
+Use `models/comparisons/apples_to_apples/` for controlled comparisons.
 
 ### 2. There is no evidence of split leakage in the committed `id_disjoint` run
 
@@ -450,30 +462,28 @@ The committed split has:
 
 So the baseline beating the Siamese model is not explained by obvious ID leakage.
 
-### 3. Blocking was previously not used symmetrically
+### 3. Blocking support is now symmetric in the comparison pipeline
 
-The older saved TF-IDF baseline does apply blocking during scoring.
+`src/run_comparison_matrix.py` can run both methods with:
 
-The older saved Siamese workflow does not.
+- no blocking (`pair_scoring`)
+- shared blocking (`blocked_pipeline`)
 
-Both pipelines still evaluate on the labeled pair files rather than generating candidates from the full dataset, so blocking is acting as a scoring gate inside the baseline, not as a full candidate-generation stage used by both methods.
+Both still operate on labeled pair files for evaluation, so this is pair-level benchmark evaluation, not full all-vs-all production candidate generation.
 
-The new code now supports shared blocking for both methods.
+### 4. Controlled matrix results currently favor the Siamese model
 
-### 4. The deep model currently lags the baseline
+From `models/comparisons/apples_to_apples/comparison_summary.json`:
 
-This is a project-level research result, not a code-organization issue.
+- Siamese outperforms TF-IDF on test F1 in all four matched settings
+- strongest run is `siamese + extended + blocked_pipeline` with test F1 `0.9849`
 
-It likely means:
-
-- the baseline is very strong for this dataset
-- the Siamese configuration is still underpowered or mismatched to the task
-- the current comparison needs to be made more fair before drawing conclusions
+So the current project claim should be based on the controlled matrix, not on older unmatched artifact comparisons.
 
 ## Recommended Next Review Questions
 
-1. Should the Siamese model be rerun with the same extended attributes as the baseline?
-2. Should blocking be removed from the baseline for a pure embedding-distance comparison?
-3. Should a candidate-generation block be applied to both methods consistently?
-4. Is `max_len=80` limiting the Siamese model too much for extended attributes?
+1. Which operating point should be used for deployment: max F1, precision-targeted, or recall-targeted?
+2. Where do Siamese and TF-IDF disagree most (hard positives vs hard negatives)?
+3. Should we freeze blocking as `first_name OR age`, or evaluate alternative block keys for robustness?
+4. Should we tune Siamese hyperparameters further now that extended-attribute runs are strong?
 5. Do we want to keep `scripts/print_names.py` as-is, or clean/remove it?

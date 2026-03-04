@@ -1,27 +1,76 @@
-# NCVoters Dataset Summary
-This document provides a summary of the NCVoters dataset, its components, and its intended use for duplicate detection research, obtained from: https://hpi.de/naumann/projects/repeatability/datasets/ncvoters-dataset.html
-## Overview
-The **NCVoters dataset** is a sampled subset of the North Carolina Voter Registration data (specifically the `VR_Snapshot_20181106` snapshot). It was curated by the [HPI Information Systems Group](https://hpi.de/naumann/projects/repeatability/datasets/ncvoters-dataset.html) for research in data cleaning and duplicate detection.
+# NCVoters Dataset Notes
 
-## Dataset Components
+This document summarizes the NCVoters benchmark files used in this repository.
 
-### 1. Main Dataset
-* **Size:** 14,183 objects (records).
-* **Format:** Tab-Separated Values (TSV).
-* **Preparation:** Data has been normalized with lower-casing and the removal of special characters.
-* **Characteristics:** The sampling technique was designed to reduce the size of the original massive registration list while maintaining the original ratios of duplicate clusters.
+Source reference:
 
-### 2. Duplicates (Ground Truth)
-* **Size:** 9,819 objects.
-* **Description:** This file contains the records from the main dataset that are known to be duplicates. 
-* **Use Case:** These serve as the "Positive" matches for testing entity resolution and linking algorithms.
+- https://hpi.de/naumann/projects/repeatability/datasets/ncvoters-dataset.html
 
-### 3. Non-duplicates (Control Group)
-* **Size:** 98,142 pairs.
-* **Description:** A large collection of record pairs generated through a [systematic approach](https://hpi.de/naumann/projects/repeatability/datasets/ncvoters-dataset.html) to ensure they are distinct individuals.
-* **Use Case:** These serve as the "Negative" matches to test the precision of an algorithm and ensure it does not incorrectly link different people.
+## 1. Files Used in This Repo
 
-## Purpose & Methodology
-The dataset is primarily used to benchmark the efficiency and accuracy of **duplicate detection** algorithms. By providing a fixed set of confirmed matches (Duplicates) and confirmed non-matches (Non-duplicates), researchers can calculate standard metrics like Precision, Recall, and F1-score.
+- `data/raw/ncvoters.tsv`
+  - main record table
+  - each row is one voter record
+- `data/raw/ncvoters_DPL.tsv`
+  - labeled duplicate pairs (`label=1`)
+  - each row is a pair `(id1, id2)`
+- `data/raw/ncvoters_NDPL.tsv`
+  - labeled non-duplicate pairs (`label=0`)
+  - each row is a pair `(id1, id2)`
 
-**Source:** [HPI NCVoters Project Page](https://hpi.de/naumann/projects/repeatability/datasets/ncvoters-dataset.html)
+Prepared artifact:
+
+- `data/processed/ncvoters_prepared.tsv`
+  - normalized version of `ncvoters.tsv`
+
+## 2. Current Footprint (in this repo)
+
+- records in prepared table: `14,183`
+- duplicate pairs (DPL): `9,819`
+- non-duplicate pairs (NDPL): `98,142`
+- NDPL:DPL ratio: `10:1`
+
+Important clarification:
+
+- DPL and NDPL are pair files, not standalone record-object counts.
+
+## 3. How the Dataset Is Used Here
+
+This project is a supervised pair-classification benchmark:
+
+- input: two records
+- output: duplicate vs non-duplicate
+
+The same labeled pair data is used for:
+
+- Siamese BiLSTM training/evaluation (`src/train.py`, `src/evaluate.py`)
+- TF-IDF distance baseline (`src/baseline_tfidf.py`)
+- apples-to-apples comparison matrix (`src/run_comparison_matrix.py`)
+
+## 4. Split Policy
+
+Default split strategy:
+
+- `id_disjoint` (prevents the same record ID from appearing across train/val/test)
+
+Deterministic split artifact path pattern:
+
+- `data/processed/splits/{strategy}_seed{seed}.tsv`
+
+Canonical committed split:
+
+- `data/processed/splits/id_disjoint_seed42.tsv`
+
+## 5. Evaluation Context
+
+Two evaluation scenarios are supported:
+
+- `pair_scoring`: no blocking
+- `blocked_pipeline`: shared blocking for both model families
+
+Default blocking used in comparison runs:
+
+- keys: `first_name,age`
+- mode: `any`
+
+This keeps evaluation fair across Siamese and TF-IDF methods.

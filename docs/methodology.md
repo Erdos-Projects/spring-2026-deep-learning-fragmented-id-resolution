@@ -1,58 +1,166 @@
-# Project Methodology: Deep Learning for Entity Resolution
+# Project Methodology: NCVoters Duplicate Detection
 
-## 1. Data Acquisition and Exploratory Data Analysis (EDA)
-The project utilizes the **North Carolina Voters Registry** as the primary dataset. Before model development, we will perform a comprehensive EDA to establish a baseline for data quality and distribution.
+This document describes the implemented methodology in this repository after the reproducibility and apples-to-apples comparison updates.
 
-* **Data Profiling:** We will analyze the dataset for cardinality (unique values), null-value density, and attribute distribution (e.g., distribution of zip codes or birth years).
-* **Exact Duplicate Detection:** A baseline "naive" approach will be executed to identify and remove pre-existing exact duplicates (100% string matches) to ensure our training subset is distinct.
-* **Subset Selection:** We will isolate a "clean" subset of approximately 10,000–50,000 unique records. This subset will serve as the **Anchor** data for our synthetic generation pipeline, effectively acting as the ground truth ($Y_{true}$) for the self-supervised learning task.
+## 1. Objective
 
-## 2. Synthetic Data Generation Strategy
-To overcome the "Cold Start" problem (the lack of labeled duplicate pairs), we will implement a self-supervised learning approach using **Data Augmentation**. We will generate a synthetic training dataset containing labeled pairs of records.
+Given two voter records, predict whether they refer to the same individual.
 
-### A. Noise Injection Models (Generating Positives)
-We will define a set of stochastic functions to simulate real-world data entry errors. For a given anchor record $A$, we generate a positive duplicate $A'$ using:
+This is treated as supervised binary classification over labeled pairs:
 
-* **Keyboard Distance Noise:** Simulating "fat-finger" typos based on QWERTY keyboard adjacency (e.g., replacing 's' with 'a' or 'd').
-* **Phonetic Noise:** Replacing names with phonetically similar but strictly distinct spellings (e.g., "Catherine" $\rightarrow$ "Katherine").
-* **OCR/Visual Noise:** Simulating errors common in scanned documents (e.g., '1' $\rightarrow$ 'I', '0' $\rightarrow$ 'O').
-* **Token Corruption:** Randomly dropping middle names, swapping first/last names, or truncating street suffixes (e.g., "Street" $\rightarrow$ "St").
+- duplicate pair (`label=1`)
+- non-duplicate pair (`label=0`)
 
-### B. Hard Sample Mining
-To ensure the model learns semantic similarity rather than simple string matching, we will explicitly engineer "Hard" samples:
+## 2. Data and Labels
 
-* **Hard Positives:** Pairs that refer to the same entity but look significantly different (e.g., high edit distance due to abbreviations and nicknames).
-* **Hard Negatives:** Pairs that represent *different* entities but look highly similar.
-    * *Example:* Same Name and Address, but different Date of Birth (simulating twins or clerical errors).
-    * *Example:* Same Last Name and Address, but different First Name (simulating family members living together).
+Inputs:
 
-The final training set will consist of triplets or pairs: `(Anchor, Positive, Label=1)` and `(Anchor, Negative, Label=0)`.
+- `data/raw/ncvoters.tsv`
+- `data/raw/ncvoters_DPL.tsv` (positives)
+- `data/raw/ncvoters_NDPL.tsv` (negatives)
 
-## 3. Model Architecture
-We will employ a **Deep Learning approach based on Metric Learning**.
+Prepared artifacts:
 
-![Placeholder: Diagram of Siamese Network Architecture]
+- `data/processed/ncvoters_prepared.tsv`
+- `data/processed/ncvoters_attribute_stats.tsv`
 
-* **Architecture:** We will utilize a **Siamese Network** (or Bi-Encoder) architecture. This setup uses two identical subnetworks with shared weights to process the two records independently.
-* **Encoder Backbone:** The subnetworks will be powered by a Transformer-based model (e.g., **DistilBERT** or **RoBERTa**). Transformers are chosen over RNNs/LSTMs for their superior ability to capture global context and semantic relationships within the text (e.g., understanding that "Bill" and "William" are related).
-* **Embedding Space:** The model will output high-dimensional vector embeddings for each record. The objective is to map true duplicates close together in vector space and non-duplicates far apart.
+Current footprint in this repo:
 
-## 4. Training and Optimization
-* **Input Representation:** Records will be serialized into a single string (e.g., `[CLS] First Last [SEP] Address [SEP] Zip [SEP]`).
-* **Loss Function:** We will use **Contrastive Loss** or **Triplet Loss**. These functions penalize the model when the distance between an Anchor and a Positive is large, or when the distance between an Anchor and a Negative is small.
-* **Validation:** During training, performance will be monitored on a held-out synthetic validation set to prevent overfitting to the noise generators.
+- records: 14,183
+- duplicate pairs: 9,819
+- non-duplicate pairs: 98,142
 
-## 5. Evaluation Strategy (The "Gold Standard")
-Evaluating solely on synthetic data risks "learning the noise generator" rather than solving the real problem.
+## 3. Preprocessing and Feature Sets
 
-* **The Gold Set:** We will manually label a small, representative sample of the *real, unaltered* North Carolina dataset (approx. 100–200 pairs) to create a "Gold Standard" test set.
-* **Metrics:** The model will be evaluated on this Gold Set using **Precision** (how many predicted duplicates are actually duplicates), **Recall** (how many real duplicates did we find), and **F1-Score**.
+Preprocessing is handled by `scripts/ncvoters_preprocess_and_eda.py`:
 
-## 6. Inference Pipeline (Real-World Application)
-Once trained, the model will be applied to the remaining unlabeled dataset.
+- lowercase normalization
+- special-character cleanup
+- whitespace normalization
 
-![Placeholder: Diagram of Record Linkage Pipeline with Blocking]
+Two attribute presets are used in experiments:
 
-* **Blocking (Candidate Generation):** To avoid the computational expense of comparing every record against every other ($N^2$ complexity), we will implement a Blocking pass. We will only run the Deep Learning model on pairs that share a coarse attribute (e.g., matching Zip Code or Soundex of Last Name).
-* **Pairwise Classification:** The trained model will predict a similarity score for the candidate pairs.
-* **Thresholding:** Pairs with a similarity score above a determined threshold (e.g., $>0.85$) will be flagged as duplicates.
+- `baseline`: `first_name,last_name,house_num,street_name,zip_code`
+- `extended`: baseline + `age,sex,race_desc,ethnic_desc`
+
+## 4. Split Strategy and Leakage Control
+
+The default split strategy is `id_disjoint`, which prevents the same record ID from appearing across train/validation/test.
+
+Deterministic split artifacts are saved to:
+
+- `data/processed/splits/{strategy}_seed{seed}.tsv`
+
+The canonical committed split is:
+
+- `data/processed/splits/id_disjoint_seed42.tsv`
+
+This makes results reproducible and prevents entity-level leakage.
+
+## 5. Shared Blocking for Candidate Generation
+
+To reduce pair-comparison cost, both model families can use the same blocking stage (`src/blocking.py`).
+
+Default blocking used in end-to-end comparisons:
+
+- keys: `first_name,age`
+- mode: `any` (pair passes if any blocking key matches)
+
+For the current test split in the apples-to-apples runs:
+
+- positive pass rate: `1.0`
+- negative pass rate: `0.03495`
+- candidate pairs after blocking: `303` of `2291`
+
+## 6. Model Families
+
+### A. Deep model: Siamese BiLSTM classifier
+
+Implemented in `src/model.py`, trained via `src/train.py`.
+
+Pipeline:
+
+1. serialize selected attributes for each record
+2. character embedding + BiLSTM encoding
+3. absolute difference between encoded pair vectors
+4. MLP head outputs duplicate probability
+
+Training details:
+
+- weighted BCE option for class imbalance
+- early stopping by validation metric (default monitor: PR-AUC)
+- threshold selected on validation (default mode: F1)
+
+### B. Non-deep baseline: TF-IDF distance scorer
+
+Implemented in `src/baseline_tfidf.py`.
+
+Pipeline:
+
+1. serialize records
+2. TF-IDF char n-gram embedding
+3. cosine distance between record vectors
+4. distance threshold selected on validation (default: F1)
+
+This baseline can run with the same split and blocking settings as the Siamese model.
+
+## 7. Evaluation Protocol
+
+The project reports:
+
+- accuracy
+- precision
+- recall
+- F1
+- ROC-AUC
+- PR-AUC
+- confusion matrix
+
+Evaluation supports two scenarios:
+
+- `pair_scoring`: no blocking for either method
+- `blocked_pipeline`: shared blocking for both methods
+
+This separates pure scoring quality from realistic candidate-generation conditions.
+
+## 8. Apples-to-Apples Comparison Design
+
+`src/run_comparison_matrix.py` runs a full comparison matrix across:
+
+- methods: `siamese`, `tfidf`
+- attribute sets: `baseline`, `extended`
+- scenarios: `pair_scoring`, `blocked_pipeline`
+
+Outputs:
+
+- `models/comparisons/apples_to_apples/comparison_summary.tsv`
+- `models/comparisons/apples_to_apples/comparison_summary.json`
+
+## 9. Current Results Snapshot (March 4, 2026)
+
+From `models/comparisons/apples_to_apples/comparison_summary.json`:
+
+- `pair_scoring + baseline`
+  - Siamese F1: `0.9492`
+  - TF-IDF F1: `0.9156`
+- `pair_scoring + extended`
+  - Siamese F1: `0.9806`
+  - TF-IDF F1: `0.9176`
+- `blocked_pipeline + baseline`
+  - Siamese F1: `0.9407`
+  - TF-IDF F1: `0.9313`
+- `blocked_pipeline + extended`
+  - Siamese F1: `0.9849`
+  - TF-IDF F1: `0.9630`
+
+Conclusion from the controlled matrix:
+
+- TF-IDF is a strong baseline.
+- Shared blocking is effective for scale.
+- The Siamese model outperforms TF-IDF when compared under matched split, attributes, and blocking conditions.
+
+## 10. Next Iteration Priorities
+
+1. hard-case error analysis (where methods disagree)
+2. better calibration and threshold selection for deployment constraints
+3. optional architecture iteration (stronger encoder) only after baseline protocol remains fixed

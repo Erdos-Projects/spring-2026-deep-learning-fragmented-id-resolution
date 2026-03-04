@@ -1,4 +1,4 @@
-# NCVoters Duplicate Detection (Siamese LSTM Baseline)
+# NCVoters Duplicate Detection (Siamese + TF-IDF Baselines)
 
 This repository trains and evaluates a supervised duplicate-record classifier on the NCVoters benchmark.
 
@@ -242,6 +242,33 @@ Scenarios:
 
 - `pair_scoring`: no blocking for either model
 - `blocked_pipeline`: shared blocking for both models
+
+## Latest Comparison Snapshot (March 4, 2026)
+
+Source:
+
+- `models/comparisons/apples_to_apples/comparison_summary.json`
+
+Key test-set F1 results:
+
+- `pair_scoring + baseline attrs`
+  - Siamese: `0.9492`
+  - TF-IDF: `0.9156`
+- `pair_scoring + extended attrs`
+  - Siamese: `0.9806`
+  - TF-IDF: `0.9176`
+- `blocked_pipeline + baseline attrs`
+  - Siamese: `0.9407`
+  - TF-IDF: `0.9313`
+- `blocked_pipeline + extended attrs`
+  - Siamese: `0.9849`
+  - TF-IDF: `0.9630`
+
+Blocking summary for `first_name OR age` on the same test split:
+
+- positive pass rate: `1.0`
+- negative pass rate: `0.03495`
+- candidate pairs: `303 / 2291`
 
 ## Tests
 
