@@ -203,6 +203,22 @@ Important property:
 
 - `id_disjoint` prevents the same record from appearing in multiple splits
 
+## `src/blocking.py`
+
+Role:
+
+- shared blocking / candidate-generation utilities
+
+What it does:
+
+- parses blocking keys
+- computes whether a pair survives the block
+- summarizes positive/negative pass rates
+
+Important usage:
+
+- both the Siamese pipeline and the TF-IDF baseline can now use the same blocking stage
+
 ## `src/metrics.py`
 
 Role:
@@ -274,6 +290,7 @@ What it does:
 - supports weighted loss for imbalance
 - selects a threshold on validation
 - early-stops based on a chosen validation metric
+- can apply shared blocking before model scoring
 - saves checkpoint and metrics artifacts
 
 Outputs include:
@@ -294,6 +311,7 @@ What it does:
 
 - reloads model and vocabulary
 - scores a requested split
+- applies checkpoint blocking settings unless overridden
 - uses either checkpoint threshold or a newly tuned threshold
 - writes JSON/TSV evaluation artifacts
 
@@ -313,7 +331,7 @@ What it does:
 - serializes each record independently
 - builds TF-IDF embeddings
 - computes cosine distance for each pair
-- optionally applies blocking
+- optionally applies the shared blocking stage
 - tunes a distance threshold on validation
 - writes baseline artifacts
 
@@ -336,6 +354,19 @@ What it does:
 Use when:
 
 - comparing attribute subsets for the Siamese model
+
+## `src/run_comparison_matrix.py`
+
+Role:
+
+- convenience runner for apples-to-apples comparisons
+
+What it does:
+
+- runs Siamese and TF-IDF under the same split
+- compares baseline and extended attributes
+- compares unblocked pair scoring and blocked pipeline scenarios
+- writes a summary table for all runs
 
 ## Tests
 
@@ -393,19 +424,21 @@ Configuration summary:
 
 ## Important Caveats
 
-### 1. The saved comparison is not fully apples-to-apples
+### 1. Older saved comparisons are not fully apples-to-apples
 
-The committed TF-IDF baseline uses:
+The originally committed TF-IDF baseline uses:
 
 - extended attributes
 - blocking
 
-The committed Siamese run uses:
+The originally committed Siamese run uses:
 
 - only the baseline attribute subset
 - no blocking
 
-So the current comparison is informative, but not yet a perfectly fair head-to-head model comparison.
+So those historical artifacts are informative, but not yet a perfectly fair head-to-head model comparison.
+
+The new shared blocking and comparison-matrix code is intended to fix that.
 
 ### 2. There is no evidence of split leakage in the committed `id_disjoint` run
 
@@ -417,13 +450,15 @@ The committed split has:
 
 So the baseline beating the Siamese model is not explained by obvious ID leakage.
 
-### 3. Blocking is not used symmetrically
+### 3. Blocking was previously not used symmetrically
 
-The current saved TF-IDF baseline does apply blocking during scoring.
+The older saved TF-IDF baseline does apply blocking during scoring.
 
-The current saved Siamese workflow does not.
+The older saved Siamese workflow does not.
 
 Both pipelines still evaluate on the labeled pair files rather than generating candidates from the full dataset, so blocking is acting as a scoring gate inside the baseline, not as a full candidate-generation stage used by both methods.
+
+The new code now supports shared blocking for both methods.
 
 ### 4. The deep model currently lags the baseline
 
@@ -442,4 +477,3 @@ It likely means:
 3. Should a candidate-generation block be applied to both methods consistently?
 4. Is `max_len=80` limiting the Siamese model too much for extended attributes?
 5. Do we want to keep `scripts/print_names.py` as-is, or clean/remove it?
-

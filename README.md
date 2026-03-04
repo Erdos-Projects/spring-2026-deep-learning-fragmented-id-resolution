@@ -77,6 +77,18 @@ Use extended attributes:
 python src/train.py --attribute-set extended --run-dir models/runs/extended_id_disjoint
 ```
 
+Use shared blocking for the Siamese pipeline:
+
+```bash
+python src/train.py ^
+  --split-path data/processed/splits/id_disjoint_seed42.tsv ^
+  --attribute-set extended ^
+  --max-len 128 ^
+  --blocking-keys first_name,age ^
+  --blocking-mode any ^
+  --run-dir models/runs/extended_id_disjoint_blocked
+```
+
 Run both baseline and extended as an ablation and keep the best by monitor metric:
 
 ```bash
@@ -196,8 +208,40 @@ Baseline outputs:
 Suggested comparison:
 
 - Run the TF-IDF baseline and Siamese model on the same `id_disjoint` split
+- Compare both:
+  - pure pair scoring (`--blocking-keys none`)
+  - blocked end-to-end pipeline (`--blocking-keys first_name,age`)
 - Compare Precision / Recall / F1 / PR-AUC on the test split
 - Inspect hard positives and hard negatives where TF-IDF fails but Siamese succeeds
+
+## Apples-to-Apples Comparison Matrix
+
+To compare both model families fairly across:
+
+- baseline vs extended attributes
+- unblocked pair scoring vs blocked pipeline evaluation
+
+run:
+
+```bash
+python src/run_comparison_matrix.py ^
+  --split-path data/processed/splits/id_disjoint_seed42.tsv ^
+  --blocking-keys first_name,age ^
+  --blocking-mode any ^
+  --baseline-max-len 80 ^
+  --extended-max-len 128 ^
+  --run-root models/comparisons/apples_to_apples
+```
+
+This produces:
+
+- `models/comparisons/apples_to_apples/comparison_summary.tsv`
+- `models/comparisons/apples_to_apples/comparison_summary.json`
+
+Scenarios:
+
+- `pair_scoring`: no blocking for either model
+- `blocked_pipeline`: shared blocking for both models
 
 ## Tests
 

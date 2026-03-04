@@ -9,11 +9,13 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 try:
+    from .blocking import compute_block_mask, parse_blocking_keys, summarize_blocking
     from .dataset import NCVotersDataset, Vocabulary
     from .metrics import compute_binary_metrics, select_threshold
     from .model import SiameseNetwork
     from .splits import check_split_integrity, load_split_artifact
 except ImportError:
+    from blocking import compute_block_mask, parse_blocking_keys, summarize_blocking
     from dataset import NCVotersDataset, Vocabulary
     from metrics import compute_binary_metrics, select_threshold
     from model import SiameseNetwork
@@ -32,6 +34,12 @@ def parse_args():
     parser.add_argument("--threshold-mode", choices=["checkpoint", "f1", "precision_target", "fixed"], default="checkpoint")
     parser.add_argument("--threshold", type=float, default=0.5, help="Used only when --threshold-mode=fixed")
     parser.add_argument("--precision-target", type=float, default=None)
+    parser.add_argument(
+        "--blocking-keys",
+        default=None,
+        help="Override checkpoint blocking keys. Use 'none' to disable. Default: use checkpoint setting.",
+    )
+    parser.add_argument("--blocking-mode", choices=["all", "any"], default=None)
     parser.add_argument("--output-dir", default="models/eval")
     parser.add_argument("--output-prefix", default="evaluation")
     parser.add_argument("--disable-progress", action="store_true")
@@ -69,6 +77,12 @@ def run_inference(model, loader, device, disable_progress=False):
     return y_true, y_prob
 
 
+def restore_full_probabilities(full_pairs_df, candidate_mask, candidate_prob):
+    full_prob = np.zeros(len(full_pairs_df), dtype=float)
+    full_prob[np.flatnonzero(candidate_mask)] = candidate_prob
+    return full_prob
+
+
 def save_confusion_matrix(path, metrics_payload):
     cm = metrics_payload["confusion_matrix"]
     cm_df = pd.DataFrame(
@@ -95,16 +109,30 @@ def main():
     if split_pairs.empty:
         raise ValueError(f"Split '{args.split_name}' is empty in {args.split_path}")
 
+    blocking_keys = (
+        parse_blocking_keys(args.blocking_keys, default_keys=[])
+        if args.blocking_keys is not None
+        else list(config.get("blocking_keys", []))
+    )
+    blocking_mode = args.blocking_mode if args.blocking_mode is not None else config.get("blocking_mode", "any")
+
+    data_df = pd.read_csv(data_path, sep="\t", dtype=str).fillna("")
+    data_df["id"] = data_df["id"].astype(str)
+    candidate_mask = compute_block_mask(split_pairs, data_df, blocking_keys, blocking_mode)
+    candidate_pairs = split_pairs.loc[candidate_mask].copy().reset_index(drop=True)
+
     dataset = NCVotersDataset(
         data_path=data_path,
-        pairs_df=split_pairs,
+        pairs_df=candidate_pairs,
         vocab=vocab,
         max_len=int(config["max_len"]),
         attributes=list(config["attributes"]),
         strict_missing_ids=False,
         drop_missing_ids=True,
     )
-    loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
+    loader = None
+    if len(dataset) > 0:
+        loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
 
     model = SiameseNetwork(
         vocab_size=vocab.vocab_size,
@@ -113,7 +141,12 @@ def main():
     ).to(device)
     model.load_state_dict(checkpoint["model_state_dict"])
 
-    y_true, y_prob = run_inference(model, loader, device, disable_progress=args.disable_progress)
+    y_true = split_pairs["label"].astype(int).to_numpy()
+    if loader is None:
+        y_prob = np.zeros(len(split_pairs), dtype=float)
+    else:
+        _, candidate_prob = run_inference(model, loader, device, disable_progress=args.disable_progress)
+        y_prob = restore_full_probabilities(split_pairs, candidate_mask, candidate_prob)
 
     if args.threshold_mode == "checkpoint":
         chosen_threshold = float(checkpoint.get("best_threshold", 0.5))
@@ -133,6 +166,7 @@ def main():
         raise ValueError(f"Unknown threshold mode: {args.threshold_mode}")
 
     metrics = compute_binary_metrics(y_true, y_prob, threshold=chosen_threshold)
+    metrics["blocking"] = summarize_blocking(y_true, candidate_mask)
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -145,6 +179,8 @@ def main():
             "chosen_threshold": chosen_threshold,
             "metrics": metrics,
             "split_summary": split_summary,
+            "blocking_keys": blocking_keys,
+            "blocking_mode": blocking_mode,
             "model_path": args.model_path,
             "split_path": args.split_path,
             "data_path": data_path,

@@ -7,6 +7,7 @@ import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
 
 try:
+    from .blocking import compute_block_mask, parse_blocking_keys, summarize_blocking
     from .data_utils import (
         count_missing_pair_ids,
         load_labeled_pairs,
@@ -17,6 +18,7 @@ try:
     from .metrics import compute_binary_metrics
     from .splits import build_splits, check_split_integrity, load_split_artifact, save_split_artifact
 except ImportError:
+    from blocking import compute_block_mask, parse_blocking_keys, summarize_blocking
     from data_utils import (
         count_missing_pair_ids,
         load_labeled_pairs,
@@ -26,9 +28,6 @@ except ImportError:
     )
     from metrics import compute_binary_metrics
     from splits import build_splits, check_split_integrity, load_split_artifact, save_split_artifact
-
-
-DEFAULT_BLOCKING_KEYS = ["first_name", "age"]
 
 
 def parse_args():
@@ -82,17 +81,6 @@ def parse_args():
 
     parser.add_argument("--run-dir", default="models/baselines/tfidf_distance")
     return parser.parse_args()
-
-
-def parse_blocking_keys(raw_value):
-    if raw_value is None:
-        return list(DEFAULT_BLOCKING_KEYS)
-    value = raw_value.strip().lower()
-    if value in {"", "none", "off"}:
-        return []
-    return [item.strip() for item in raw_value.split(",") if item.strip()]
-
-
 def serialize_record(record, attributes, tagged=False):
     tokens = []
     for attr in attributes:
@@ -115,34 +103,6 @@ def fit_vectorizer(data_df, attributes, args):
     matrix = vectorizer.fit_transform(texts)
     record_to_row = {record_id: idx for idx, record_id in enumerate(data_df["id"].astype(str))}
     return vectorizer, matrix, record_to_row
-
-
-def compute_block_mask(pairs_df, data_df, blocking_keys, blocking_mode):
-    if not blocking_keys:
-        return np.ones(len(pairs_df), dtype=bool)
-
-    missing_keys = [key for key in blocking_keys if key not in data_df.columns]
-    if missing_keys:
-        missing_list = ", ".join(sorted(missing_keys))
-        raise ValueError(f"Blocking keys not present in prepared data: {missing_list}")
-
-    attr_df = data_df[["id"] + blocking_keys].copy()
-    merged = pairs_df.merge(attr_df, left_on="id1", right_on="id", how="left")
-    merged = merged.merge(attr_df, left_on="id2", right_on="id", how="left", suffixes=("_1", "_2"))
-
-    comparisons = []
-    for key in blocking_keys:
-        left = merged[f"{key}_1"].fillna("").astype(str)
-        right = merged[f"{key}_2"].fillna("").astype(str)
-        comparisons.append((left == right).to_numpy())
-
-    if blocking_mode == "all":
-        mask = np.logical_and.reduce(comparisons)
-    else:
-        mask = np.logical_or.reduce(comparisons)
-    return mask.astype(bool)
-
-
 def compute_pair_distances(pairs_df, matrix, record_to_row):
     distances = np.ones(len(pairs_df), dtype=float)
     missing_mask = np.zeros(len(pairs_df), dtype=bool)
@@ -210,11 +170,10 @@ def summarize_split(pairs_df, distances, block_mask, missing_mask, distance_thre
     labels = pairs_df["label"].astype(int).to_numpy()
     metrics = compute_binary_metrics(labels, 1.0 - distances, threshold=1.0 - distance_threshold)
     metrics["distance_threshold"] = float(distance_threshold)
-    metrics["blocking_pass_rate"] = float(np.mean(block_mask)) if len(block_mask) else 0.0
-    metrics["blocked_pair_count"] = int((~block_mask).sum())
     metrics["missing_pair_count"] = int(missing_mask.sum())
     metrics["mean_distance"] = float(np.mean(distances)) if len(distances) else float("nan")
     metrics["median_distance"] = float(np.median(distances)) if len(distances) else float("nan")
+    metrics["blocking"] = summarize_blocking(labels, block_mask)
     return metrics
 
 
@@ -361,7 +320,8 @@ def main():
     flat_metrics = []
     for split_name, payload in results.items():
         row = {"split": split_name}
-        row.update({k: v for k, v in payload.items() if k != "confusion_matrix"})
+        row.update({k: v for k, v in payload.items() if k not in {"confusion_matrix", "blocking"}})
+        row.update(payload["blocking"])
         row.update(
             {
                 "tn": payload["confusion_matrix"]["tn"],

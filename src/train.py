@@ -12,6 +12,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 try:
+    from .blocking import compute_block_mask, parse_blocking_keys, summarize_blocking
     from .data_utils import (
         count_missing_pair_ids,
         load_labeled_pairs,
@@ -24,6 +25,7 @@ try:
     from .model import SiameseNetwork
     from .splits import build_splits, check_split_integrity, load_split_artifact, save_split_artifact
 except ImportError:
+    from blocking import compute_block_mask, parse_blocking_keys, summarize_blocking
     from data_utils import count_missing_pair_ids, load_labeled_pairs, load_prepared_data, parse_attributes, set_seed
     from dataset import NCVotersDataset
     from metrics import compute_binary_metrics, select_threshold
@@ -57,6 +59,17 @@ def parse_args():
 
     parser.add_argument("--attribute-set", choices=["baseline", "extended"], default="baseline")
     parser.add_argument("--attributes-csv", default=None, help="Comma-separated list. Overrides --attribute-set.")
+    parser.add_argument(
+        "--blocking-keys",
+        default="none",
+        help="Comma-separated blocking keys for shared candidate generation. Use 'none' to disable blocking.",
+    )
+    parser.add_argument(
+        "--blocking-mode",
+        choices=["all", "any"],
+        default="any",
+        help="Whether all blocking keys must match or at least one must match.",
+    )
 
     parser.add_argument("--use-weighted-loss", action="store_true")
     parser.add_argument("--class-weight-pos", type=float, default=None)
@@ -135,6 +148,8 @@ def compute_pos_weight(train_pairs, explicit_pos_weight=None, use_weighted_loss=
     n_neg = float((train_labels == 0).sum())
     if n_pos == 0:
         raise ValueError("Cannot compute positive class weight because train split has zero positives.")
+    if n_neg == 0:
+        return None
     return n_neg / n_pos
 
 
@@ -172,17 +187,44 @@ def _save_confusion_matrix(path, metrics_payload):
     cm_df.to_csv(path, sep="\t")
 
 
+def build_dataset_and_loader(args, pairs_df, vocab, attributes, shuffle=False):
+    dataset = NCVotersDataset(
+        data_path=args.data_path,
+        pairs_df=pairs_df,
+        vocab=vocab,
+        max_len=args.max_len,
+        attributes=attributes,
+        strict_missing_ids=False,
+        drop_missing_ids=True,
+    )
+    if len(dataset) == 0:
+        return dataset, None
+    loader = DataLoader(
+        dataset, batch_size=args.batch_size, shuffle=shuffle, num_workers=args.num_workers
+    )
+    return dataset, loader
+
+
+def restore_full_probabilities(full_pairs_df, candidate_mask, candidate_prob):
+    full_prob = np.zeros(len(full_pairs_df), dtype=float)
+    candidate_positions = np.flatnonzero(candidate_mask)
+    full_prob[candidate_positions] = candidate_prob
+    return full_prob
+
+
 def main():
     args = parse_args()
     set_seed(args.seed)
     device = pick_device(args.device)
     attributes = parse_attributes(args.attribute_set, args.attributes_csv)
+    blocking_keys = parse_blocking_keys(args.blocking_keys, default_keys=[])
 
     run_dir = Path(args.run_dir)
     run_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"Using device: {device}")
     print(f"Attributes: {attributes}")
+    print(f"Blocking keys: {blocking_keys if blocking_keys else 'none'}")
 
     data_df = load_prepared_data(args.data_path)
     pairs_df = load_labeled_pairs(args.dpl_path, args.ndpl_path, fail_on_duplicate_pairs=True)
@@ -209,45 +251,49 @@ def main():
     val_pairs = split_df[split_df["split"] == "val"][["pair_id", "id1", "id2", "label"]].copy()
     test_pairs = split_df[split_df["split"] == "test"][["pair_id", "id1", "id2", "label"]].copy()
 
+    train_block_mask = compute_block_mask(train_pairs, data_df, blocking_keys, args.blocking_mode)
+    val_block_mask = compute_block_mask(val_pairs, data_df, blocking_keys, args.blocking_mode)
+    test_block_mask = compute_block_mask(test_pairs, data_df, blocking_keys, args.blocking_mode)
+    blocking_summary = {
+        "train": summarize_blocking(train_pairs["label"].astype(int).to_numpy(), train_block_mask),
+        "val": summarize_blocking(val_pairs["label"].astype(int).to_numpy(), val_block_mask),
+        "test": summarize_blocking(test_pairs["label"].astype(int).to_numpy(), test_block_mask),
+    }
+    print(f"Blocking summary: {blocking_summary}")
+
+    train_candidate_pairs = train_pairs.loc[train_block_mask].copy().reset_index(drop=True)
+    val_candidate_pairs = val_pairs.loc[val_block_mask].copy().reset_index(drop=True)
+    test_candidate_pairs = test_pairs.loc[test_block_mask].copy().reset_index(drop=True)
+
     train_dataset = NCVotersDataset(
         data_path=args.data_path,
-        pairs_df=train_pairs,
+        pairs_df=train_candidate_pairs,
         max_len=args.max_len,
         attributes=attributes,
         strict_missing_ids=False,
         drop_missing_ids=True,
     )
+    if len(train_dataset) == 0:
+        raise ValueError("Training candidate set is empty after blocking.")
     vocab = train_dataset.vocab
-    val_dataset = NCVotersDataset(
-        data_path=args.data_path,
-        pairs_df=val_pairs,
-        vocab=vocab,
-        max_len=args.max_len,
-        attributes=attributes,
-        strict_missing_ids=False,
-        drop_missing_ids=True,
-    )
-    test_dataset = NCVotersDataset(
-        data_path=args.data_path,
-        pairs_df=test_pairs,
-        vocab=vocab,
-        max_len=args.max_len,
-        attributes=attributes,
-        strict_missing_ids=False,
-        drop_missing_ids=True,
-    )
 
-    if len(train_dataset) == 0 or len(val_dataset) == 0 or len(test_dataset) == 0:
-        raise ValueError("At least one split became empty after filtering missing IDs.")
+    val_dataset, val_loader = build_dataset_and_loader(
+        args=args,
+        pairs_df=val_candidate_pairs,
+        vocab=vocab,
+        attributes=attributes,
+        shuffle=False,
+    )
+    test_dataset, test_loader = build_dataset_and_loader(
+        args=args,
+        pairs_df=test_candidate_pairs,
+        vocab=vocab,
+        attributes=attributes,
+        shuffle=False,
+    )
 
     train_loader = DataLoader(
         train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers
-    )
-    val_loader = DataLoader(
-        val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers
-    )
-    test_loader = DataLoader(
-        test_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers
     )
 
     model = SiameseNetwork(
@@ -257,7 +303,9 @@ def main():
     ).to(device)
 
     pos_weight = compute_pos_weight(
-        train_pairs=train_pairs, explicit_pos_weight=args.class_weight_pos, use_weighted_loss=args.use_weighted_loss
+        train_pairs=train_candidate_pairs,
+        explicit_pos_weight=args.class_weight_pos,
+        use_weighted_loss=args.use_weighted_loss,
     )
     if pos_weight is not None:
         criterion = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([pos_weight], device=device))
@@ -279,7 +327,7 @@ def main():
 
     for epoch in range(1, args.epochs + 1):
         print(f"\nEpoch {epoch}/{args.epochs}")
-        train_loss, train_y_true, train_y_prob = run_epoch(
+        train_loss, train_candidate_y_true, train_candidate_y_prob = run_epoch(
             model,
             train_loader,
             criterion,
@@ -288,15 +336,25 @@ def main():
             train_mode=True,
             disable_progress=args.disable_progress,
         )
-        val_loss, val_y_true, val_y_prob = run_epoch(
-            model,
-            val_loader,
-            criterion,
-            optimizer,
-            device,
-            train_mode=False,
-            disable_progress=args.disable_progress,
-        )
+        train_y_true = train_pairs["label"].astype(int).to_numpy()
+        train_y_prob = restore_full_probabilities(train_pairs, train_block_mask, train_candidate_y_prob)
+
+        if val_loader is None:
+            val_loss = float("nan")
+            val_y_true = val_pairs["label"].astype(int).to_numpy()
+            val_y_prob = np.zeros(len(val_pairs), dtype=float)
+        else:
+            val_loss, _, val_candidate_y_prob = run_epoch(
+                model,
+                val_loader,
+                criterion,
+                optimizer,
+                device,
+                train_mode=False,
+                disable_progress=args.disable_progress,
+            )
+            val_y_true = val_pairs["label"].astype(int).to_numpy()
+            val_y_prob = restore_full_probabilities(val_pairs, val_block_mask, val_candidate_y_prob)
 
         epoch_threshold, _, threshold_sweep = select_threshold(
             val_y_true,
@@ -328,6 +386,8 @@ def main():
                 "val_pr_auc": val_metrics["pr_auc"],
                 "monitor_metric": args.monitor_metric,
                 "monitor_value": monitor_value,
+                "train_candidate_count": int(train_block_mask.sum()),
+                "val_candidate_count": int(val_block_mask.sum()),
             }
         )
 
@@ -358,16 +418,24 @@ def main():
         raise RuntimeError("Training finished without a valid best checkpoint.")
 
     model.load_state_dict(best_state_dict)
-    test_loss, test_y_true, test_y_prob = run_epoch(
-        model,
-        test_loader,
-        criterion,
-        optimizer,
-        device,
-        train_mode=False,
-        disable_progress=args.disable_progress,
-    )
+    if test_loader is None:
+        test_loss = float("nan")
+        test_y_true = test_pairs["label"].astype(int).to_numpy()
+        test_y_prob = np.zeros(len(test_pairs), dtype=float)
+    else:
+        test_loss, _, test_candidate_y_prob = run_epoch(
+            model,
+            test_loader,
+            criterion,
+            optimizer,
+            device,
+            train_mode=False,
+            disable_progress=args.disable_progress,
+        )
+        test_y_true = test_pairs["label"].astype(int).to_numpy()
+        test_y_prob = restore_full_probabilities(test_pairs, test_block_mask, test_candidate_y_prob)
     test_metrics = compute_binary_metrics(test_y_true, test_y_prob, threshold=best_threshold)
+    test_metrics["blocking"] = blocking_summary["test"]
 
     checkpoint_path = run_dir / "best_model.pth"
     checkpoint = {
@@ -387,12 +455,15 @@ def main():
             "split_path": str(split_path),
             "val_frac": args.val_frac,
             "test_frac": args.test_frac,
+            "blocking_keys": blocking_keys,
+            "blocking_mode": args.blocking_mode,
         },
         "best_threshold": best_threshold,
         "best_epoch": best_epoch,
         "best_val_metrics": best_val_metrics,
         "test_metrics": test_metrics,
         "split_summary": split_summary,
+        "blocking_summary": blocking_summary,
     }
     torch.save(checkpoint, checkpoint_path)
 
@@ -413,6 +484,9 @@ def main():
         "test_loss": test_loss,
         "test_metrics": test_metrics,
         "split_summary": split_summary,
+        "blocking_keys": blocking_keys,
+        "blocking_mode": args.blocking_mode,
+        "blocking_summary": blocking_summary,
         "paths": {
             "checkpoint": str(checkpoint_path),
             "split": str(split_path),

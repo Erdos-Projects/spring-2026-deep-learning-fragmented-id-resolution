@@ -1,0 +1,139 @@
+{
+  "model_type": "tfidf_cosine_distance_baseline",
+  "attributes": [
+    "first_name",
+    "last_name",
+    "house_num",
+    "street_name",
+    "zip_code"
+  ],
+  "blocking_keys": [],
+  "blocking_mode": "any",
+  "tagged_serialization": false,
+  "vectorizer": {
+    "analyzer": "char",
+    "ngram_range": [
+      2,
+      4
+    ],
+    "min_df": 1,
+    "max_features": null,
+    "vocab_size": 45846
+  },
+  "threshold_selection": "f1",
+  "selected_distance_threshold": 0.8097367470051599,
+  "selected_similarity_threshold": 0.19026325299484015,
+  "split_summary": {
+    "train_pairs": 54025,
+    "train_pos": 4860,
+    "train_neg": 49165,
+    "val_pairs": 2241,
+    "val_pos": 210,
+    "val_neg": 2031,
+    "test_pairs": 2291,
+    "test_pos": 231,
+    "test_neg": 2060,
+    "train_ids": 9310,
+    "val_ids": 1310,
+    "test_ids": 1361,
+    "train_val_id_overlap": 0,
+    "train_test_id_overlap": 0,
+    "val_test_id_overlap": 0
+  },
+  "metrics": {
+    "train": {
+      "threshold": 0.7,
+      "accuracy": 0.9187413234613605,
+      "precision": 1.0,
+      "recall": 0.09670781893004116,
+      "f1": 0.17636022514071295,
+      "confusion_matrix": {
+        "tn": 49165,
+        "fp": 0,
+        "fn": 4390,
+        "tp": 470
+      },
+      "roc_auc": 0.9977191484624505,
+      "pr_auc": 0.9855205608143947,
+      "distance_threshold": 0.3,
+      "missing_pair_count": 0,
+      "mean_distance": 0.9379693542230078,
+      "median_distance": 0.9824778802348259,
+      "blocking": {
+        "candidate_pair_count": 54025,
+        "blocked_pair_count": 0,
+        "blocking_pass_rate": 1.0,
+        "positive_pair_count": 4860,
+        "positive_candidate_count": 4860,
+        "positive_pass_rate": 1.0,
+        "negative_pair_count": 49165,
+        "negative_candidate_count": 49165,
+        "negative_pass_rate": 1.0
+      }
+    },
+    "val": {
+      "threshold": 0.19026325299484015,
+      "accuracy": 0.9910754127621597,
+      "precision": 0.9318181818181818,
+      "recall": 0.9761904761904762,
+      "f1": 0.9534883720930233,
+      "confusion_matrix": {
+        "tn": 2016,
+        "fp": 15,
+        "fn": 5,
+        "tp": 205
+      },
+      "roc_auc": 0.9986565379475276,
+      "pr_auc": 0.9806355995888013,
+      "distance_threshold": 0.8097367470051599,
+      "missing_pair_count": 0,
+      "mean_distance": 0.9351322048609175,
+      "median_distance": 0.982262145905843,
+      "blocking": {
+        "candidate_pair_count": 2241,
+        "blocked_pair_count": 0,
+        "blocking_pass_rate": 1.0,
+        "positive_pair_count": 210,
+        "positive_candidate_count": 210,
+        "positive_pass_rate": 1.0,
+        "negative_pair_count": 2031,
+        "negative_candidate_count": 2031,
+        "negative_pass_rate": 1.0
+      }
+    },
+    "test": {
+      "threshold": 0.19026325299484015,
+      "accuracy": 0.9834133566128328,
+      "precision": 0.9406392694063926,
+      "recall": 0.8917748917748918,
+      "f1": 0.9155555555555556,
+      "confusion_matrix": {
+        "tn": 2047,
+        "fp": 13,
+        "fn": 25,
+        "tp": 206
+      },
+      "roc_auc": 0.9967889715462531,
+      "pr_auc": 0.9778785812458297,
+      "distance_threshold": 0.8097367470051599,
+      "missing_pair_count": 0,
+      "mean_distance": 0.9328563064925414,
+      "median_distance": 0.9824440573753974,
+      "blocking": {
+        "candidate_pair_count": 2291,
+        "blocked_pair_count": 0,
+        "blocking_pass_rate": 1.0,
+        "positive_pair_count": 231,
+        "positive_candidate_count": 231,
+        "positive_pass_rate": 1.0,
+        "negative_pair_count": 2060,
+        "negative_candidate_count": 2060,
+        "negative_pass_rate": 1.0
+      }
+    }
+  },
+  "paths": {
+    "split": "data\\processed\\splits\\id_disjoint_seed42.tsv",
+    "run_dir": "models\\comparisons\\apples_to_apples\\tfidf\\pair_scoring\\baseline"
+  }
+}
