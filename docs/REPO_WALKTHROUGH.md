@@ -126,9 +126,12 @@ Role:
 
 What it does:
 
+- loads DPL/NDPL pair files and prepared records via CLI paths
+- validates required pair columns (`id1`, `id2`)
+- reports missing IDs in pair files
 - merges pair IDs back to the prepared record table
 - computes Levenshtein distances for names
-- prints example duplicate and non-duplicate pairs
+- prints deterministic sampled duplicate and non-duplicate pairs
 - reports basic overlap counts
 
 Use when:
@@ -144,30 +147,17 @@ Role:
 
 What it does:
 
-- evaluates blocking recall for candidate keys
+- loads data and pair files from CLI paths
+- evaluates blocking key match rates for DPL and NDPL
+- reports `first_name OR age` and `first_name AND age` rates when available
 - summarizes how attributes change across duplicate and non-duplicate pairs
-- estimates serialized record lengths
+- estimates serialized record lengths from configurable columns
 
 Use when:
 
 - selecting blocking keys
 - choosing attributes
 - estimating input length constraints
-
-## `scripts/print_names.py`
-
-Role:
-
-- one-off debugging helper
-
-What it does:
-
-- compares two hardcoded voter IDs field-by-field
-
-Notes:
-
-- this is not part of the production workflow
-- it appears to contain duplicated logic and should be treated as a scratch script
 
 ## `src/data_utils.py`
 
@@ -486,4 +476,3 @@ So the current project claim should be based on the controlled matrix, not on ol
 2. Where do Siamese and TF-IDF disagree most (hard positives vs hard negatives)?
 3. Should we freeze blocking as `first_name OR age`, or evaluate alternative block keys for robustness?
 4. Should we tune Siamese hyperparameters further now that extended-attribute runs are strong?
-5. Do we want to keep `scripts/print_names.py` as-is, or clean/remove it?

@@ -10,7 +10,7 @@ from tqdm import tqdm
 
 PATTERN = re.compile(r"[\W_]+", re.UNICODE)
 
-# Reused from resources/reference.conf (hymd.ncvoters.attributes)
+# Default NCVoters attribute subset used in this project.
 NCVOTERS_ATTRIBUTES = [
     "age", "area_cd", "birth_place", "cancellation_dt", "county_desc", "county_id", "ethnic_desc", "first_name",
     "house_num", "last_name", "midl_name", "party_desc", "phone_num", "race_desc", "reason_cd", "registr_dt",
