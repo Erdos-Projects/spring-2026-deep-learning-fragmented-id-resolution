@@ -13,7 +13,7 @@ The project currently contains:
 
 1. raw-data preprocessing
 2. exploratory data analysis (attribute-level and pair-level)
-3. a reproducible Siamese LSTM pipeline
+3. a reproducible Siamese pipeline (BiLSTM or CharCNN encoder)
 4. a TF-IDF embedding-distance baseline
 5. saved split and experiment artifacts
 
@@ -54,7 +54,7 @@ This split is important because the same record IDs do not appear across train/v
 
 There are two modeling paths:
 
-- deep model: Siamese BiLSTM classifier
+- deep model: Siamese neural classifier (BiLSTM or CharCNN encoder)
 - baseline: TF-IDF embedding-distance scorer
 
 ### 5. Evaluation artifacts
@@ -255,7 +255,9 @@ Role:
 Architecture:
 
 - character embedding layer
-- bidirectional LSTM encoder
+- encoder options:
+  - bidirectional LSTM (`bilstm`)
+  - character CNN (`charcnn`)
 - max pooling over sequence outputs
 - absolute-difference comparison
 - MLP classifier head
@@ -397,7 +399,7 @@ Configuration summary:
 - split: `id_disjoint`
 - attributes: `first_name,last_name,house_num,street_name,zip_code`
 - max length: `80`
-- model: character-level Siamese BiLSTM
+- model: character-level Siamese with selectable encoder (`bilstm` or `charcnn`)
 
 ### TF-IDF baseline run
 

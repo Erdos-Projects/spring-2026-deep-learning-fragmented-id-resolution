@@ -34,7 +34,7 @@ except ImportError:
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Train Siamese LSTM for NCVoters duplicate detection.")
+    parser = argparse.ArgumentParser(description="Train Siamese model for NCVoters duplicate detection.")
     parser.add_argument("--data-path", default="data/processed/ncvoters_prepared.tsv")
     parser.add_argument("--dpl-path", default="data/raw/ncvoters_DPL.tsv")
     parser.add_argument("--ndpl-path", default="data/raw/ncvoters_NDPL.tsv")
@@ -55,6 +55,10 @@ def parse_args():
     parser.add_argument("--max-len", type=int, default=80)
     parser.add_argument("--embedding-dim", type=int, default=64)
     parser.add_argument("--hidden-dim", type=int, default=64)
+    parser.add_argument("--encoder", choices=["bilstm", "charcnn"], default="bilstm")
+    parser.add_argument("--cnn-channels", type=int, default=64)
+    parser.add_argument("--cnn-kernel-sizes", default="3,4,5")
+    parser.add_argument("--classifier-hidden-dim", type=int, default=64)
     parser.add_argument("--num-workers", type=int, default=0)
 
     parser.add_argument("--attribute-set", choices=["baseline", "extended"], default="baseline")
@@ -93,6 +97,16 @@ def pick_device(device_arg):
             raise ValueError("CUDA requested but not available.")
         return torch.device("cuda")
     return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
+def parse_int_csv(value, arg_name):
+    try:
+        ints = [int(v.strip()) for v in str(value).split(",") if v.strip()]
+    except ValueError as exc:
+        raise ValueError(f"Invalid integer list for {arg_name}: {value}") from exc
+    if not ints:
+        raise ValueError(f"{arg_name} cannot be empty.")
+    return ints
 
 
 def run_epoch(model, loader, criterion, optimizer, device, train_mode=True, disable_progress=False):
@@ -216,6 +230,7 @@ def main():
     args = parse_args()
     set_seed(args.seed)
     device = pick_device(args.device)
+    cnn_kernel_sizes = parse_int_csv(args.cnn_kernel_sizes, "--cnn-kernel-sizes")
     attributes = parse_attributes(args.attribute_set, args.attributes_csv)
     blocking_keys = parse_blocking_keys(args.blocking_keys, default_keys=[])
 
@@ -224,6 +239,7 @@ def main():
 
     print(f"Using device: {device}")
     print(f"Attributes: {attributes}")
+    print(f"Siamese encoder: {args.encoder}")
     print(f"Blocking keys: {blocking_keys if blocking_keys else 'none'}")
 
     data_df = load_prepared_data(args.data_path)
@@ -300,6 +316,10 @@ def main():
         vocab_size=vocab.vocab_size,
         embedding_dim=args.embedding_dim,
         hidden_dim=args.hidden_dim,
+        encoder_type=args.encoder,
+        cnn_channels=args.cnn_channels,
+        cnn_kernel_sizes=cnn_kernel_sizes,
+        classifier_hidden_dim=args.classifier_hidden_dim,
     ).to(device)
 
     pos_weight = compute_pos_weight(
@@ -444,6 +464,10 @@ def main():
         "config": {
             "embedding_dim": args.embedding_dim,
             "hidden_dim": args.hidden_dim,
+            "encoder_type": args.encoder,
+            "cnn_channels": args.cnn_channels,
+            "cnn_kernel_sizes": cnn_kernel_sizes,
+            "classifier_hidden_dim": args.classifier_hidden_dim,
             "max_len": args.max_len,
             "attributes": attributes,
             "split_strategy": args.split_strategy,

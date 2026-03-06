@@ -23,6 +23,14 @@ def parse_args():
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--embedding-dim", type=int, default=64)
     parser.add_argument("--hidden-dim", type=int, default=64)
+    parser.add_argument(
+        "--siamese-encoders",
+        default="bilstm",
+        help="Comma-separated list from {bilstm,charcnn}. Example: bilstm,charcnn",
+    )
+    parser.add_argument("--cnn-channels", type=int, default=64)
+    parser.add_argument("--cnn-kernel-sizes", default="3,4,5")
+    parser.add_argument("--classifier-hidden-dim", type=int, default=64)
     parser.add_argument("--baseline-max-len", type=int, default=80)
     parser.add_argument("--extended-max-len", type=int, default=128)
 
@@ -40,6 +48,17 @@ def parse_args():
     return parser.parse_args()
 
 
+def parse_encoder_list(value):
+    encoders = [v.strip() for v in str(value).split(",") if v.strip()]
+    valid = {"bilstm", "charcnn"}
+    invalid = [e for e in encoders if e not in valid]
+    if invalid:
+        raise ValueError(f"Invalid encoder(s): {invalid}. Valid choices: {sorted(valid)}")
+    if not encoders:
+        raise ValueError("No encoders provided.")
+    return encoders
+
+
 def scenario_specs(args):
     if args.scenario_set == "unblocked":
         return [{"name": "pair_scoring", "blocking_keys": "none"}]
@@ -51,7 +70,7 @@ def scenario_specs(args):
     ]
 
 
-def train_siamese(args, attribute_set, scenario, run_dir):
+def train_siamese(args, attribute_set, scenario, run_dir, encoder):
     max_len = args.baseline_max_len if attribute_set == "baseline" else args.extended_max_len
     cmd = [
         sys.executable,
@@ -76,6 +95,14 @@ def train_siamese(args, attribute_set, scenario, run_dir):
         str(args.embedding_dim),
         "--hidden-dim",
         str(args.hidden_dim),
+        "--encoder",
+        encoder,
+        "--cnn-channels",
+        str(args.cnn_channels),
+        "--cnn-kernel-sizes",
+        args.cnn_kernel_sizes,
+        "--classifier-hidden-dim",
+        str(args.classifier_hidden_dim),
         "--max-len",
         str(max_len),
         "--attribute-set",
@@ -169,43 +196,62 @@ def collect_tfidf_metrics(run_dir):
 
 def main():
     args = parse_args()
+    siamese_encoders = parse_encoder_list(args.siamese_encoders)
     run_root = Path(args.run_root)
     run_root.mkdir(parents=True, exist_ok=True)
 
     rows = []
     for scenario in scenario_specs(args):
         for attribute_set in ["baseline", "extended"]:
-            siamese_dir = run_root / "siamese" / scenario["name"] / attribute_set
             tfidf_dir = run_root / "tfidf" / scenario["name"] / attribute_set
-            siamese_dir.mkdir(parents=True, exist_ok=True)
             tfidf_dir.mkdir(parents=True, exist_ok=True)
 
-            train_siamese(args, attribute_set, scenario, siamese_dir)
             run_tfidf(args, attribute_set, scenario, tfidf_dir)
-
-            siamese_metrics = collect_siamese_metrics(siamese_dir)
             tfidf_metrics = collect_tfidf_metrics(tfidf_dir)
 
-            for method_name, metrics in [("siamese", siamese_metrics), ("tfidf", tfidf_metrics)]:
+            for encoder in siamese_encoders:
+                siamese_dir = run_root / f"siamese_{encoder}" / scenario["name"] / attribute_set
+                siamese_dir.mkdir(parents=True, exist_ok=True)
+                train_siamese(args, attribute_set, scenario, siamese_dir, encoder)
+                siamese_metrics = collect_siamese_metrics(siamese_dir)
                 rows.append(
                     {
                         "scenario": scenario["name"],
-                        "method": method_name,
+                        "method": f"siamese_{encoder}",
                         "attribute_set": attribute_set,
                         "blocking_keys": scenario["blocking_keys"],
                         "blocking_mode": args.blocking_mode,
-                        "val_f1": metrics["val_f1"],
-                        "val_pr_auc": metrics["val_pr_auc"],
-                        "test_f1": metrics["test_f1"],
-                        "test_pr_auc": metrics["test_pr_auc"],
-                        "test_roc_auc": metrics["test_roc_auc"],
-                        "best_threshold": metrics["best_threshold"],
-                        "test_candidate_count": metrics["blocking_summary_test"].get("candidate_pair_count"),
-                        "test_positive_pass_rate": metrics["blocking_summary_test"].get("positive_pass_rate"),
-                        "test_negative_pass_rate": metrics["blocking_summary_test"].get("negative_pass_rate"),
-                        "run_dir": str(siamese_dir if method_name == "siamese" else tfidf_dir),
+                        "val_f1": siamese_metrics["val_f1"],
+                        "val_pr_auc": siamese_metrics["val_pr_auc"],
+                        "test_f1": siamese_metrics["test_f1"],
+                        "test_pr_auc": siamese_metrics["test_pr_auc"],
+                        "test_roc_auc": siamese_metrics["test_roc_auc"],
+                        "best_threshold": siamese_metrics["best_threshold"],
+                        "test_candidate_count": siamese_metrics["blocking_summary_test"].get("candidate_pair_count"),
+                        "test_positive_pass_rate": siamese_metrics["blocking_summary_test"].get("positive_pass_rate"),
+                        "test_negative_pass_rate": siamese_metrics["blocking_summary_test"].get("negative_pass_rate"),
+                        "run_dir": str(siamese_dir),
                     }
                 )
+            rows.append(
+                {
+                    "scenario": scenario["name"],
+                    "method": "tfidf",
+                    "attribute_set": attribute_set,
+                    "blocking_keys": scenario["blocking_keys"],
+                    "blocking_mode": args.blocking_mode,
+                    "val_f1": tfidf_metrics["val_f1"],
+                    "val_pr_auc": tfidf_metrics["val_pr_auc"],
+                    "test_f1": tfidf_metrics["test_f1"],
+                    "test_pr_auc": tfidf_metrics["test_pr_auc"],
+                    "test_roc_auc": tfidf_metrics["test_roc_auc"],
+                    "best_threshold": tfidf_metrics["best_threshold"],
+                    "test_candidate_count": tfidf_metrics["blocking_summary_test"].get("candidate_pair_count"),
+                    "test_positive_pass_rate": tfidf_metrics["blocking_summary_test"].get("positive_pass_rate"),
+                    "test_negative_pass_rate": tfidf_metrics["blocking_summary_test"].get("negative_pass_rate"),
+                    "run_dir": str(tfidf_dir),
+                }
+            )
 
     summary_df = pd.DataFrame(rows).sort_values(
         ["scenario", "attribute_set", "test_pr_auc", "test_f1"],

@@ -184,3 +184,69 @@ def test_smoke_train_then_evaluate_with_shared_blocking(tmp_path):
         eval_payload = json.load(f)
     assert eval_payload["blocking_keys"] == ["first_name", "age"]
     assert "blocking" in eval_payload["metrics"]
+
+
+def test_smoke_train_then_evaluate_charcnn(tmp_path):
+    prepared_path, dpl_path, ndpl_path = _build_tiny_dataset(tmp_path)
+
+    run_dir = tmp_path / "run_charcnn"
+    split_path = tmp_path / "split_charcnn.tsv"
+    train_cmd = [
+        sys.executable,
+        "src/train.py",
+        "--data-path",
+        str(prepared_path),
+        "--dpl-path",
+        str(dpl_path),
+        "--ndpl-path",
+        str(ndpl_path),
+        "--split-strategy",
+        "pair_random",
+        "--split-output",
+        str(split_path),
+        "--epochs",
+        "1",
+        "--batch-size",
+        "4",
+        "--encoder",
+        "charcnn",
+        "--cnn-channels",
+        "16",
+        "--cnn-kernel-sizes",
+        "3,4,5",
+        "--classifier-hidden-dim",
+        "16",
+        "--run-dir",
+        str(run_dir),
+        "--disable-progress",
+        "--seed",
+        "7",
+    ]
+    subprocess.run(train_cmd, check=True)
+
+    checkpoint_path = run_dir / "best_model.pth"
+    assert checkpoint_path.exists()
+
+    with open(run_dir / "best_metrics.json", "r", encoding="utf-8") as f:
+        payload = json.load(f)
+    assert payload["best_epoch"] >= 1
+
+    eval_out_dir = tmp_path / "eval_charcnn"
+    eval_cmd = [
+        sys.executable,
+        "src/evaluate.py",
+        "--model-path",
+        str(checkpoint_path),
+        "--split-path",
+        str(split_path),
+        "--split-name",
+        "test",
+        "--output-dir",
+        str(eval_out_dir),
+        "--output-prefix",
+        "smoke_charcnn",
+        "--disable-progress",
+    ]
+    subprocess.run(eval_cmd, check=True)
+
+    assert (eval_out_dir / "smoke_charcnn_test_metrics.json").exists()

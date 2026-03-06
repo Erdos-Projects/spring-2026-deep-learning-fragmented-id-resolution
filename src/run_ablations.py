@@ -21,6 +21,10 @@ def parse_args():
     parser.add_argument("--max-len", type=int, default=80)
     parser.add_argument("--embedding-dim", type=int, default=64)
     parser.add_argument("--hidden-dim", type=int, default=64)
+    parser.add_argument("--encoder", choices=["bilstm", "charcnn"], default="bilstm")
+    parser.add_argument("--cnn-channels", type=int, default=64)
+    parser.add_argument("--cnn-kernel-sizes", default="3,4,5")
+    parser.add_argument("--classifier-hidden-dim", type=int, default=64)
     parser.add_argument("--monitor-metric", choices=["f1", "pr_auc", "recall", "precision", "accuracy"], default="pr_auc")
     parser.add_argument("--run-root", default="models/runs/ablations")
     parser.add_argument("--disable-progress", action="store_true")
@@ -53,6 +57,14 @@ def run_single(attribute_set, args, run_dir):
         str(args.embedding_dim),
         "--hidden-dim",
         str(args.hidden_dim),
+        "--encoder",
+        args.encoder,
+        "--cnn-channels",
+        str(args.cnn_channels),
+        "--cnn-kernel-sizes",
+        args.cnn_kernel_sizes,
+        "--classifier-hidden-dim",
+        str(args.classifier_hidden_dim),
         "--attribute-set",
         attribute_set,
         "--monitor-metric",

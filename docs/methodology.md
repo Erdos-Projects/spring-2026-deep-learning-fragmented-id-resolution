@@ -74,14 +74,18 @@ For the current test split in the apples-to-apples runs:
 
 ## 6. Model Families
 
-### A. Deep model: Siamese BiLSTM classifier
+### A. Deep model: Siamese neural classifier
 
 Implemented in `src/model.py`, trained via `src/train.py`.
+Supported encoders:
+
+- `bilstm` (default)
+- `charcnn`
 
 Pipeline:
 
 1. serialize selected attributes for each record
-2. character embedding + BiLSTM encoding
+2. character embedding + encoder (`bilstm` or `charcnn`)
 3. absolute difference between encoded pair vectors
 4. MLP head outputs duplicate probability
 

@@ -1,0 +1,5 @@
+scenario	method	attribute_set	blocking_keys	blocking_mode	val_f1	val_pr_auc	test_f1	test_pr_auc	test_roc_auc	best_threshold	test_candidate_count	test_positive_pass_rate	test_negative_pass_rate	run_dir
+blocked_pipeline	siamese	baseline	first_name,age	any	0.9764150943396226	0.9973397527149372	0.940677966101695	0.9855665118545799	0.9984049930651873	0.05	303	1.0	0.03495145631067961	models\comparisons\apples_to_apples\siamese\blocked_pipeline\baseline
+blocked_pipeline	siamese	extended	first_name,age	any	1.0	0.9999999999999998	0.9849462365591398	0.9993751832771669	0.9999264489555751	0.17	303	1.0	0.03495145631067961	models\comparisons\apples_to_apples\siamese\blocked_pipeline\extended
+pair_scoring	siamese	baseline	none	any	0.9812206572769953	0.9976578887724412	0.9491525423728814	0.9865643131042574	0.9967469423780104	0.5800000000000001	2291	1.0	1.0	models\comparisons\apples_to_apples\siamese\pair_scoring\baseline
+pair_scoring	siamese	extended	none	any	1.0	1.0	0.980561555075594	0.9987061378301647	0.9998423906190896	0.42000000000000004	2291	1.0	1.0	models\comparisons\apples_to_apples\siamese\pair_scoring\extended

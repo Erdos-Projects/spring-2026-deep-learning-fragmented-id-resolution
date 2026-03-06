@@ -9,7 +9,7 @@ This repository trains and evaluates a supervised duplicate-record classifier on
   - `data/raw/ncvoters_DPL.tsv` (duplicate pairs, label=1)
   - `data/raw/ncvoters_NDPL.tsv` (non-duplicate pairs, label=0)
 - Prepared table: `data/processed/ncvoters_prepared.tsv`
-- Model: character-level Siamese BiLSTM + MLP classifier
+- Model: character-level Siamese encoder (`bilstm` or `charcnn`) + MLP classifier
 - Task: binary classification of record pairs (`duplicate` vs `non-duplicate`)
 
 ## Current dataset footprint (in this repo)
@@ -75,6 +75,17 @@ Use extended attributes:
 
 ```bash
 python src/train.py --attribute-set extended --run-dir models/runs/extended_id_disjoint
+```
+
+Use CharCNN encoder instead of BiLSTM:
+
+```bash
+python src/train.py ^
+  --encoder charcnn ^
+  --cnn-channels 64 ^
+  --cnn-kernel-sizes 3,4,5 ^
+  --classifier-hidden-dim 64 ^
+  --run-dir models/runs/charcnn_id_disjoint
 ```
 
 Use shared blocking for the Siamese pipeline:
@@ -226,6 +237,7 @@ run:
 ```bash
 python src/run_comparison_matrix.py ^
   --split-path data/processed/splits/id_disjoint_seed42.tsv ^
+  --siamese-encoders bilstm,charcnn ^
   --blocking-keys first_name,age ^
   --blocking-mode any ^
   --baseline-max-len 80 ^
@@ -242,6 +254,29 @@ Scenarios:
 
 - `pair_scoring`: no blocking for either model
 - `blocked_pipeline`: shared blocking for both models
+
+When `--siamese-encoders bilstm,charcnn` is used, outputs are written under:
+
+- `models/comparisons/.../siamese_bilstm/...`
+- `models/comparisons/.../siamese_charcnn/...`
+
+## Human-Readable Comparison Summary
+
+To convert `comparison_summary.json` into an easy-to-read report:
+
+```bash
+python src/summarize_comparison.py ^
+  --input-path models/comparisons/apples_to_apples/comparison_summary.json ^
+  --output-report models/comparisons/apples_to_apples/comparison_summary_report.txt ^
+  --output-winners-tsv models/comparisons/apples_to_apples/comparison_winners.tsv
+```
+
+This prints:
+
+- overall best run
+- winner per scenario and attribute set
+- average metrics by method
+- metric deltas versus TF-IDF (if TF-IDF is present)
 
 ## Latest Comparison Snapshot (March 4, 2026)
 

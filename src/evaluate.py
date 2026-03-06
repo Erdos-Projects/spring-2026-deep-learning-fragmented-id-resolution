@@ -23,7 +23,7 @@ except ImportError:
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Evaluate Siamese LSTM checkpoint on a split file.")
+    parser = argparse.ArgumentParser(description="Evaluate Siamese checkpoint on a split file.")
     parser.add_argument("--model-path", required=True, help="Path to saved checkpoint from src/train.py")
     parser.add_argument("--split-path", required=True, help="Path to split TSV generated during training")
     parser.add_argument("--split-name", choices=["train", "val", "test"], default="test")
@@ -138,6 +138,10 @@ def main():
         vocab_size=vocab.vocab_size,
         embedding_dim=int(config["embedding_dim"]),
         hidden_dim=int(config["hidden_dim"]),
+        encoder_type=config.get("encoder_type", "bilstm"),
+        cnn_channels=int(config.get("cnn_channels", config.get("hidden_dim", 64))),
+        cnn_kernel_sizes=config.get("cnn_kernel_sizes", [3, 4, 5]),
+        classifier_hidden_dim=int(config.get("classifier_hidden_dim", 64)),
     ).to(device)
     model.load_state_dict(checkpoint["model_state_dict"])
 
@@ -181,6 +185,7 @@ def main():
             "split_summary": split_summary,
             "blocking_keys": blocking_keys,
             "blocking_mode": blocking_mode,
+            "encoder_type": config.get("encoder_type", "bilstm"),
             "model_path": args.model_path,
             "split_path": args.split_path,
             "data_path": data_path,

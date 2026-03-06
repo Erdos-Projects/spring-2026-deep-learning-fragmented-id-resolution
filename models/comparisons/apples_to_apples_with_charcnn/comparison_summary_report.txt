@@ -1,0 +1,30 @@
+Comparison Summary Report
+
+- Runs analyzed: 12
+- Methods: siamese_bilstm, siamese_charcnn, tfidf
+- Scenarios: blocked_pipeline, pair_scoring
+- Attribute sets: baseline, extended
+
+Overall best run:
+- siamese_bilstm | blocked_pipeline | extended | test_f1=0.9849, test_pr_auc=0.9994
+
+Winners by scenario and attribute set:
+- blocked_pipeline / baseline: siamese_bilstm (test_f1=0.9407, test_pr_auc=0.9856)
+- blocked_pipeline / extended: siamese_bilstm (test_f1=0.9849, test_pr_auc=0.9994)
+- pair_scoring / baseline: siamese_bilstm (test_f1=0.9492, test_pr_auc=0.9866)
+- pair_scoring / extended: siamese_charcnn (test_f1=0.9849, test_pr_auc=0.9972)
+
+Average by method (test_f1, test_pr_auc):
+- siamese_bilstm: test_f1=0.9638, test_pr_auc=0.9926
+- siamese_charcnn: test_f1=0.9506, test_pr_auc=0.9750
+- tfidf: test_f1=0.9318, test_pr_auc=0.9843
+
+Delta vs TF-IDF by scenario/attribute set:
+- blocked_pipeline / baseline | siamese_bilstm vs tfidf: test_f1 +0.0094, test_pr_auc -0.0051
+- blocked_pipeline / baseline | siamese_charcnn vs tfidf: test_f1 +0.0065, test_pr_auc -0.0077
+- blocked_pipeline / extended | siamese_bilstm vs tfidf: test_f1 +0.0220, test_pr_auc +0.0049
+- blocked_pipeline / extended | siamese_charcnn vs tfidf: test_f1 -0.0028, test_pr_auc -0.0012
+- pair_scoring / baseline | siamese_bilstm vs tfidf: test_f1 +0.0336, test_pr_auc +0.0087
+- pair_scoring / baseline | siamese_charcnn vs tfidf: test_f1 +0.0040, test_pr_auc -0.0515
+- pair_scoring / extended | siamese_bilstm vs tfidf: test_f1 +0.0630, test_pr_auc +0.0245
+- pair_scoring / extended | siamese_charcnn vs tfidf: test_f1 +0.0673, test_pr_auc +0.0230

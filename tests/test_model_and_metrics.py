@@ -41,9 +41,26 @@ def test_dataset_getitem_and_model_forward(tmp_path):
     assert x1.dtype == torch.long
     assert y.dtype == torch.float32
 
-    model = SiameseNetwork(vocab_size=ds.vocab.vocab_size, embedding_dim=16, hidden_dim=8)
-    logits = model(x1.unsqueeze(0), x2.unsqueeze(0))
-    assert logits.shape == (1, 1)
+    bilstm_model = SiameseNetwork(
+        vocab_size=ds.vocab.vocab_size,
+        embedding_dim=16,
+        hidden_dim=8,
+        encoder_type="bilstm",
+    )
+    bilstm_logits = bilstm_model(x1.unsqueeze(0), x2.unsqueeze(0))
+    assert bilstm_logits.shape == (1, 1)
+
+    charcnn_model = SiameseNetwork(
+        vocab_size=ds.vocab.vocab_size,
+        embedding_dim=16,
+        hidden_dim=8,
+        encoder_type="charcnn",
+        cnn_channels=8,
+        cnn_kernel_sizes=[3, 4, 5],
+        classifier_hidden_dim=16,
+    )
+    charcnn_logits = charcnn_model(x1.unsqueeze(0), x2.unsqueeze(0))
+    assert charcnn_logits.shape == (1, 1)
 
 
 def test_metrics_match_sklearn_and_threshold_is_deterministic():

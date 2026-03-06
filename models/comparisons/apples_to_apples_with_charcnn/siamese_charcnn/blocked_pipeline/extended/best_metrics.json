@@ -1,0 +1,110 @@
+{
+  "best_epoch": 9,
+  "best_threshold": 0.08,
+  "monitor_metric": "pr_auc",
+  "best_monitor_value": 0.9979633621684953,
+  "best_val_metrics": {
+    "threshold": 0.08,
+    "accuracy": 0.99776885319054,
+    "precision": 0.9812206572769953,
+    "recall": 0.9952380952380953,
+    "f1": 0.9881796690307328,
+    "confusion_matrix": {
+      "tn": 2027,
+      "fp": 4,
+      "fn": 1,
+      "tp": 209
+    },
+    "roc_auc": 0.9998100865161427,
+    "pr_auc": 0.9979633621684953
+  },
+  "test_loss": 0.1723020479083061,
+  "test_metrics": {
+    "threshold": 0.08,
+    "accuracy": 0.9917066783064165,
+    "precision": 0.9308943089430894,
+    "recall": 0.9913419913419913,
+    "f1": 0.960167714884696,
+    "confusion_matrix": {
+      "tn": 2043,
+      "fp": 17,
+      "fn": 2,
+      "tp": 229
+    },
+    "roc_auc": 0.9993044172655823,
+    "pr_auc": 0.9933305887259589,
+    "blocking": {
+      "candidate_pair_count": 303,
+      "blocked_pair_count": 1988,
+      "blocking_pass_rate": 0.13225665648188564,
+      "positive_pair_count": 231,
+      "positive_candidate_count": 231,
+      "positive_pass_rate": 1.0,
+      "negative_pair_count": 2060,
+      "negative_candidate_count": 72,
+      "negative_pass_rate": 0.03495145631067961
+    }
+  },
+  "split_summary": {
+    "train_pairs": 54025,
+    "train_pos": 4860,
+    "train_neg": 49165,
+    "val_pairs": 2241,
+    "val_pos": 210,
+    "val_neg": 2031,
+    "test_pairs": 2291,
+    "test_pos": 231,
+    "test_neg": 2060,
+    "train_ids": 9310,
+    "val_ids": 1310,
+    "test_ids": 1361,
+    "train_val_id_overlap": 0,
+    "train_test_id_overlap": 0,
+    "val_test_id_overlap": 0
+  },
+  "blocking_keys": [
+    "first_name",
+    "age"
+  ],
+  "blocking_mode": "any",
+  "blocking_summary": {
+    "train": {
+      "candidate_pair_count": 6496,
+      "blocked_pair_count": 47529,
+      "blocking_pass_rate": 0.12024062933826932,
+      "positive_pair_count": 4860,
+      "positive_candidate_count": 4857,
+      "positive_pass_rate": 0.9993827160493827,
+      "negative_pair_count": 49165,
+      "negative_candidate_count": 1639,
+      "negative_pass_rate": 0.03333672327875521
+    },
+    "val": {
+      "candidate_pair_count": 270,
+      "blocked_pair_count": 1971,
+      "blocking_pass_rate": 0.12048192771084337,
+      "positive_pair_count": 210,
+      "positive_candidate_count": 210,
+      "positive_pass_rate": 1.0,
+      "negative_pair_count": 2031,
+      "negative_candidate_count": 60,
+      "negative_pass_rate": 0.029542097488921712
+    },
+    "test": {
+      "candidate_pair_count": 303,
+      "blocked_pair_count": 1988,
+      "blocking_pass_rate": 0.13225665648188564,
+      "positive_pair_count": 231,
+      "positive_candidate_count": 231,
+      "positive_pass_rate": 1.0,
+      "negative_pair_count": 2060,
+      "negative_candidate_count": 72,
+      "negative_pass_rate": 0.03495145631067961
+    }
+  },
+  "paths": {
+    "checkpoint": "models\\comparisons\\apples_to_apples_with_charcnn\\siamese_charcnn\\blocked_pipeline\\extended\\best_model.pth",
+    "split": "data\\processed\\splits\\id_disjoint_seed42.tsv",
+    "history_tsv": "models\\comparisons\\apples_to_apples_with_charcnn\\siamese_charcnn\\blocked_pipeline\\extended\\metrics_history.tsv"
+  }
+}
