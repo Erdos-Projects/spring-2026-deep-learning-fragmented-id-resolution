@@ -1,9 +1,3 @@
-"""
-LLM Augmentation using Local HuggingFace Models
-
-Install: pip install transformers torch
-"""
-
 import json
 import uuid
 import pandas as pd
@@ -326,4 +320,5 @@ if __name__ == "__main__":
     
     print("\n[TEST] Generating hard negative...")
     neg = augmenter.call_llm_for_variants(test_record, "negative", n_variants=1)
+
     print("✓ Result:", neg)
