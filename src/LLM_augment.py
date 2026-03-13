@@ -66,15 +66,13 @@ class LLM_augment_Local:
         Initialize with local HuggingFace model
         
         Args:
-            model_name: Model to use. Default: 'microsoft/Phi-3.5-mini-instruct'
-                       Other options:
-                       - 'HuggingFaceH4/zephyr-7b-beta' (~7B params, ~14GB)
-                       - 'mistralai/Mistral-7B-Instruct-v0.3' (~7B params, ~14GB)
+            model_name: Model to use. Default: 'Qwen/Qwen2.5-1.5B-Instruct'
+                       
             
             use_gpu: Whether to use GPU (True) or CPU (False)
         """
         if model_name is None:
-            model_name = 'microsoft/Phi-3.5-mini-instruct'
+            model_name = 'Qwen/Qwen2.5-1.5B-Instruct'
         
         # Set HuggingFace cache directory to temp location
         cache_dir = os.path.join(os.path.expanduser("~"), "AppData", "Local", "huggingface", "hub")
@@ -322,3 +320,4 @@ if __name__ == "__main__":
     neg = augmenter.call_llm_for_variants(test_record, "negative", n_variants=1)
 
     print("✓ Result:", neg)
+
