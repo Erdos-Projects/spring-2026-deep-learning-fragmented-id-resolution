@@ -1,0 +1,6 @@
+bucket	pair_status	pair_count
+same_address_diff_age_or_sex_close_name	unlabeled	24
+same_first_age_zip_diff_last	unlabeled	25
+same_full_name_zip_diff_address_large_age_gap	unlabeled	2
+same_last_address_same_age_diff_first	unlabeled	1
+same_last_address_small_age_gap_diff_first	unlabeled	15

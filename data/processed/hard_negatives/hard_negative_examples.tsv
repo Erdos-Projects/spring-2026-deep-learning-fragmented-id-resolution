@@ -1,0 +1,15 @@
+bucket	pair_id	id1	id2	first_name_1	first_name_2	last_name_1	last_name_2	age_1	age_2	sex_1	sex_2	house_num_1	house_num_2	street_name_1	street_name_2	zip_code_1	zip_code_2
+same_first_last_diff_age	772	1011627	11855015	nicole	nicole	parker	parker	33	40	female	female	1721	32	inspired	sega	28083	28712
+same_first_and_age_diff_last	31643	7281351	7973841	jeffrey	jeffrey	roper	lynch	52	52	male	male	5871	208	farris	8th	28655	28202
+same_first_and_age_diff_last	35885	7066643	7428883	jessica	jessica	smith	gutierrez	29	29	female	female	501	7021	cedar	rumple	28092	28262
+same_first_and_age_diff_last	70360	11092337	3116749	elizabeth	elizabeth	fincanon	moore	25	25	female	female	200	325	dove	bay	27320	28398
+same_first_and_age_diff_last	68892	13911936	324219	lindsay	lindsay	carpenter	king	33	33	female	female	423	1211	westover	liberty landing	27534	28479
+same_first_and_age_diff_last	2781	10043771	9862836	timothy	timothy	pigford	lail	42	42	male	male	201	624	smaw	jones ferry	27889	27510
+same_first_and_age_diff_last	54678	13522938	600539	rebecca	rebecca	decarlo	campbell	31	31	female	female	1000	817	hawser	starnes cove	27606	28806
+same_first_and_age_diff_last	50563	13082917	6402570	william	william	tyler	czolba	40	40	male	male	6416	137	glen dean	toucan	27603	28117
+same_first_and_age_diff_last	11979	416234	9273216	teresa	teresa	hatley	hutchins	51	51	female	female	340	811	sugar creek	martin	28740	28401
+same_first_and_age_diff_last	95037	10100369	11815601	ann	ann	davis	williams	61	61	female	female	1254	3219	turnpike	fontana lake	27909	28713
+same_first_and_age_diff_last	4379	809514	9737737	james	james	allred	sasaki adams	42	42	male	male	22	226	edwards	forbush mountain	28806	27514
+same_address_diff_age_or_sex	261	579670	740412	megan	karen	williams	larson	33	78	female	female	300	300	long shoals	long shoals	28704	28704
+same_address_diff_age_or_sex	512	3350055	3374501	jeannette	tamara	brown	king	24	30	female	female	1801	1801	fayetteville	fayetteville	27707	27707
+same_address_diff_age_or_sex	523	3186525	3291151	mahogany	lovie	monteith	matthews	25	26	female	female	1801	1801	fayetteville	fayetteville	27707	27707

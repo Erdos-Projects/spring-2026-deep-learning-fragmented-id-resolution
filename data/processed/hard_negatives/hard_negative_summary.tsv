@@ -1,0 +1,11 @@
+bucket	pair_count	pair_rate
+same_first_and_age_diff_last	34	0.00034643679566342646
+same_address_diff_age_or_sex	3	3.056795255853763e-05
+same_first_last_diff_age	1	1.0189317519512543e-05
+near_first_same_last_address	0	0.0
+near_name_same_zip	0	0.0
+same_first_age_zip_diff_last	0	0.0
+same_first_last_zip_diff_age	0	0.0
+same_full_name_address	0	0.0
+same_full_name_zip_diff_address	0	0.0
+same_last_and_address	0	0.0

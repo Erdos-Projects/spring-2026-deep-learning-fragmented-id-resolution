@@ -1,0 +1,11 @@
+bucket	raw_bucket_hits	skipped_large_groups
+same_first_last_zip_same_age_diff_address	517	0
+same_first_age_zip_diff_last	272	0
+same_address_diff_age_or_sex_close_name	97	0
+near_full_name_same_zip_same_age	74	0
+same_full_name_address_diff_sex	50	0
+same_last_address_small_age_gap_diff_first	49	0
+same_last_address_same_age_diff_first	35	0
+same_last_address_close_first	21	0
+same_full_name_address_diff_age	8	0
+same_full_name_zip_diff_address_large_age_gap	2	0
