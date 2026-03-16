@@ -1,0 +1,32 @@
+Hard-Negative Candidate Comparison Report
+
+- Candidate pairs scored: 52
+- Siamese encoder: bilstm
+- Siamese threshold: 0.4200
+- TF-IDF distance threshold: 0.7313
+
+Overall prediction counts:
+- TF-IDF predicts duplicate: 47
+- Siamese predicts duplicate: 26
+- Disagreements: 31
+- TF-IDF duplicate, Siamese non-duplicate: 26
+- Siamese duplicate, TF-IDF non-duplicate: 5
+
+Bucket summary:
+- same_address_diff_age_or_sex_close_name: pairs=24, tfidf_dup=24, siamese_dup=0, baseline_yes_siamese_no=24
+- same_last_address_small_age_gap_diff_first: pairs=15, tfidf_dup=15, siamese_dup=0, baseline_yes_siamese_no=15
+- same_full_name_zip_diff_address_large_age_gap: pairs=2, tfidf_dup=2, siamese_dup=1, baseline_yes_siamese_no=1
+- same_last_address_same_age_diff_first: pairs=1, tfidf_dup=1, siamese_dup=0, baseline_yes_siamese_no=1
+- same_first_age_zip_diff_last: pairs=25, tfidf_dup=20, siamese_dup=25, baseline_yes_siamese_no=0
+
+Most promising cases (TF-IDF says duplicate, Siamese says different):
+- 2124604||2124605 | bucket=same_address_diff_age_or_sex_close_name,same_last_address_small_age_gap_diff_first | tfidf_similarity=0.8187 | siamese_prob=0.0000
+- 6760511||6760512 | bucket=same_address_diff_age_or_sex_close_name,same_last_address_small_age_gap_diff_first | tfidf_similarity=0.7920 | siamese_prob=0.0001
+- 6837198||6846231 | bucket=same_address_diff_age_or_sex_close_name,same_last_address_small_age_gap_diff_first | tfidf_similarity=0.7769 | siamese_prob=0.0000
+- 634622||634626 | bucket=same_address_diff_age_or_sex_close_name,same_last_address_same_age_diff_first,same_last_address_small_age_gap_diff_first | tfidf_similarity=0.7750 | siamese_prob=0.0184
+- 10321255||10457571 | bucket=same_last_address_small_age_gap_diff_first | tfidf_similarity=0.7639 | siamese_prob=0.0029
+- 6899350||6914841 | bucket=same_address_diff_age_or_sex_close_name,same_last_address_small_age_gap_diff_first | tfidf_similarity=0.7635 | siamese_prob=0.0002
+- 13689017||13763886 | bucket=same_address_diff_age_or_sex_close_name | tfidf_similarity=0.7617 | siamese_prob=0.0000
+- 8813339||8813340 | bucket=same_address_diff_age_or_sex_close_name,same_last_address_small_age_gap_diff_first | tfidf_similarity=0.7578 | siamese_prob=0.0001
+- 8030912||8313521 | bucket=same_address_diff_age_or_sex_close_name,same_last_address_small_age_gap_diff_first | tfidf_similarity=0.7536 | siamese_prob=0.0002
+- 13957451||13974044 | bucket=same_address_diff_age_or_sex_close_name | tfidf_similarity=0.7530 | siamese_prob=0.0000

@@ -1,0 +1,6 @@
+bucket	pair_count	siamese_duplicate_count	tfidf_duplicate_count	disagreement_count	baseline_yes_siamese_no	siamese_yes_baseline_no	mean_siamese_prob	mean_tfidf_similarity	siamese_duplicate_rate	tfidf_duplicate_rate
+same_address_diff_age_or_sex_close_name	24	0	24	24	24	0	0.001380584667307024	0.7057254010514037	0.0	1.0
+same_last_address_small_age_gap_diff_first	15	0	15	15	15	0	0.0016998985265066343	0.7261482944753722	0.0	1.0
+same_full_name_zip_diff_address_large_age_gap	2	1	2	1	1	0	0.3297919373726472	0.3937239106776009	0.5	1.0
+same_last_address_same_age_diff_first	1	0	1	1	1	0	0.018373459577560425	0.7749771169299756	0.0	1.0
+same_first_age_zip_diff_last	25	25	20	5	0	5	0.9896666097640991	0.323657119937087	1.0	0.8
