@@ -8,16 +8,16 @@ import os
 import importlib.util
 
 # Define paths for dynamic import
-repo_root = '/content/spring-2026-deep-learning-fragmented-id-resolution'
-model_path = os.path.join(repo_root, 'src/model.py')
+#repo_root = '/content/spring-2026-deep-learning-fragmented-id-resolution'
+#model_path = os.path.join(repo_root, 'src/model.py')
 
 # Load the module directly from the file path
-spec = importlib.util.spec_from_file_location('model', model_path)
-model_module = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(model_module)
+#spec = importlib.util.spec_from_file_location('model', model_path)
+#model_module = importlib.util.module_from_spec(spec)
+#spec.loader.exec_module(model_module)
 
 # Extract the class
-CharCNNEncoder = model_module.CharCNNEncoder
+#CharCNNEncoder = model_module.CharCNNEncoder
 
 # Device configuration
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -36,9 +36,11 @@ def tokenize_and_pad(text, mapping=char_to_idx, max_len=100):
 
 def get_embeddings(df, model, char_map=char_to_idx, max_len=100, batch_size=128):
     sequences = []
-    for text in df['formatted_name']:
-        sequences.append(tokenize_and_pad(text, char_map, max_len))
-
+    for _, row in df.iterrows():
+        # Format using all columns except 'id'
+        formatted_name = ' '.join([str(row[col]) for col in df.columns if col != 'id'])
+        sequences.append(tokenize_and_pad(formatted_name, char_map, max_len))
+    
     dataset = TensorDataset(torch.LongTensor(sequences))
     loader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
     model.eval()
