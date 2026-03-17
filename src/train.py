@@ -134,52 +134,39 @@ def train_model(
     lr: float = 1e-3,
     weight_decay: float = 1e-4,
     patience: int = 5,
-    label_smoothing: float = 0.05,
+    label_smoothing: float = 0.0,
     max_grad_norm: float = 1.0,
-    best_metric: str = "f1",
 ) -> Dict[str, list]:
     """
     Full training loop with ReduceLROnPlateau scheduling and early stopping.
-
-    Args:
-        best_metric: Which metric to use for early stopping / model selection.
-                     "f1" (recommended for imbalanced data) or "loss".
 
     Returns:
         history: dict with train/val metrics per epoch
     """
     model = model.to(device)
 
-    # ── Compute pos_weight from actual class distribution ──
+    # ── Log class distribution (no pos_weight — mild imbalance doesn't need it,
+    #    and it creates a flat loss landscape that causes training collapse) ──
     n_pos, n_neg = 0, 0
     for batch in train_loader:
         labels = batch["label"]
         n_pos += labels.sum().item()
         n_neg += (1 - labels).sum().item()
-    pw = n_neg / max(n_pos, 1)
-    print(f"Class distribution: {int(n_pos)} pos, {int(n_neg)} neg → pos_weight={pw:.2f}")
+    print(f"Class distribution: {int(n_pos)} pos, {int(n_neg)} neg (ratio={n_neg/max(n_pos,1):.2f})")
 
-    criterion = nn.BCEWithLogitsLoss(
-        pos_weight=torch.tensor([pw]).to(device)
-    )
+    criterion = nn.BCEWithLogitsLoss()
 
     # ── Apply label smoothing to targets during training ──
     smooth_pos = 1.0 - label_smoothing
     smooth_neg = label_smoothing
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
-
-    # Use different scheduler modes depending on metric
-    scheduler_mode = "max" if best_metric == "f1" else "min"
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode=scheduler_mode, factor=0.5, patience=3, min_lr=1e-6
+        optimizer, mode="min", factor=0.5, patience=3, min_lr=1e-6
     )
 
-    history = {
-        "train_loss": [], "val_loss": [], "val_f1": [], "val_auc": [],
-        "val_precision": [], "val_recall": [],
-    }
-    best_val_score = -float("inf") if best_metric == "f1" else float("inf")
+    history = {"train_loss": [], "val_loss": [], "val_f1": [], "val_auc": []}
+    best_val_loss = float("inf")
     best_state = None
     wait = 0
 
@@ -207,17 +194,12 @@ def train_model(
 
         train_loss = total_loss / max(n_batches, 1)
         val_metrics = evaluate(model, val_loader, criterion, device)
-
-        # Schedule based on tracked metric
-        sched_val = val_metrics[best_metric] if best_metric in val_metrics else val_metrics["loss"]
-        scheduler.step(sched_val)
+        scheduler.step(val_metrics["loss"])
 
         history["train_loss"].append(train_loss)
         history["val_loss"].append(val_metrics["loss"])
         history["val_f1"].append(val_metrics["f1"])
         history["val_auc"].append(val_metrics["auc"])
-        history["val_precision"].append(val_metrics["precision"])
-        history["val_recall"].append(val_metrics["recall"])
 
         lr_now = optimizer.param_groups[0]["lr"]
         print(
@@ -226,25 +208,18 @@ def train_model(
             f"Val Loss: {val_metrics['loss']:.4f} | "
             f"Val F1: {val_metrics['f1']:.4f} | "
             f"Val AUC: {val_metrics['auc']:.4f} | "
-            f"Val P/R: {val_metrics['precision']:.3f}/{val_metrics['recall']:.3f} | "
             f"LR: {lr_now:.6f}"
         )
 
-        # Early stopping based on chosen metric
-        current_score = val_metrics[best_metric] if best_metric in val_metrics else val_metrics["loss"]
-        if best_metric == "f1":
-            is_better = current_score > best_val_score
-        else:
-            is_better = current_score < best_val_score
-
-        if is_better:
-            best_val_score = current_score
+        # Early stopping
+        if val_metrics["loss"] < best_val_loss:
+            best_val_loss = val_metrics["loss"]
             best_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
             wait = 0
         else:
             wait += 1
             if wait >= patience:
-                print(f"Early stopping at epoch {epoch} (patience={patience}, best {best_metric}={best_val_score:.4f})")
+                print(f"Early stopping at epoch {epoch} (patience={patience})")
                 break
 
     # Restore best model

@@ -120,9 +120,13 @@ class SiameseMatchingNetwork(nn.Module):
         self._init_weights()
 
     def _init_weights(self):
-        """Xavier initialization for the classifier to improve gradient flow."""
-        for m in self.classifier.modules():
+        """Xavier initialization for all layers to improve gradient flow."""
+        for m in self.modules():
             if isinstance(m, nn.Linear):
+                nn.init.xavier_uniform_(m.weight)
+                if m.bias is not None:
+                    nn.init.zeros_(m.bias)
+            elif isinstance(m, nn.Conv1d):
                 nn.init.xavier_uniform_(m.weight)
                 if m.bias is not None:
                     nn.init.zeros_(m.bias)
