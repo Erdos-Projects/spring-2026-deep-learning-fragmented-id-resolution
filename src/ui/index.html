@@ -11,11 +11,18 @@
     <header class="hero">
       <div class="hero-copy">
         <p class="eyebrow">NCVoters Duplicate Detection</p>
-        <h1>Load a database, choose a model, and review duplicate risk without touching raw JSON.</h1>
+        <h1>Fragmented-ID-Resolution for Voter Registration Records</h1>
         <p class="hero-text">
-          This interface wraps the project models in a guided workflow for two jobs:
-          scan an entire database for duplicates, or check one new record against a loaded database.
+          This app uses deep-learning and baseline matching models to detect likely duplicate voter-registration
+          records. It can scan an entire database for duplicate risk or help a clerk check whether one new incoming
+          registration already exists.
         </p>
+        <ol class="hero-steps">
+          <li>Load a voter-registration dataset by path or file upload.</li>
+          <li>Choose the model you want to use for scoring.</li>
+          <li>Either run a full duplicate scan or check one new entry.</li>
+          <li>Review the ranked results, duplicate summary, and cluster profiles.</li>
+        </ol>
       </div>
       <div class="hero-panel">
         <div class="mini-stat">

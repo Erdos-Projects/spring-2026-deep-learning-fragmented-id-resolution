@@ -188,7 +188,13 @@ function setDatasetMode(mode) {
 function renderFindResults(payload) {
   const root = byId("results-root");
   const pairRows = payload.duplicate_pairs || [];
-  const clusters = payload.duplicate_clusters || [];
+  const clusterSummary = payload.duplicate_cluster_summary || {
+    total_cluster_count: 0,
+    average_cluster_size: 0,
+    largest_cluster_size: 0,
+    top_clusters: [],
+  };
+  const clusters = clusterSummary.top_clusters || [];
 
   root.innerHTML = `
     <div class="results-stack">
@@ -224,12 +230,27 @@ function renderFindResults(payload) {
         </table>
       </div>
       <div class="result-block">
-        <h3>Duplicate clusters</h3>
+        <h3>Duplicate cluster summary</h3>
+        <p>
+          ${clusterSummary.total_cluster_count} predicted clusters,
+          average size ${Number(clusterSummary.average_cluster_size || 0).toFixed(2)},
+          largest cluster ${clusterSummary.largest_cluster_size} records.
+          Showing the top ${clusters.length} clusters by size.
+        </p>
         <div class="cluster-list">
           ${clusters.length ? clusters.map((cluster) => `
             <div class="cluster-chip">
-              <strong>${cluster.cluster_id}</strong> (${cluster.size} records)<br>
-              <span class="mono">${cluster.record_ids.join(", ")}</span>
+              <strong>${cluster.cluster_id}</strong> (${cluster.size} records)
+              <div class="badge-row">
+                ${cluster.shared_characteristics.map((item) => `
+                  <span class="badge">${item.attribute}: ${item.value} (${item.support_count}/${cluster.size})</span>
+                `).join("")}
+              </div>
+              <div class="hint-text">
+                ${cluster.member_preview && cluster.member_preview.length
+                  ? `Example records: ${cluster.member_preview.join(" | ")}`
+                  : "No record preview available."}
+              </div>
             </div>
           `).join("") : "No clusters formed because no duplicate pairs were predicted."}
         </div>

@@ -86,7 +86,7 @@ def test_api_upload_find_and_check_entry_with_tfidf():
 
         root_response = client.get("/")
         assert root_response.status_code == 200
-        assert "Load a database" in root_response.text
+        assert "Fragmented-ID-Resolution for Voter Registration Records" in root_response.text
 
         state_response = client.get("/app/state")
         assert state_response.status_code == 200

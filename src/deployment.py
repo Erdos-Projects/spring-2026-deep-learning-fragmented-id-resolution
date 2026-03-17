@@ -267,6 +267,100 @@ def build_duplicate_clusters(pairs_df: pd.DataFrame) -> List[Dict[str, Any]]:
     ]
 
 
+def summarize_duplicate_clusters(
+    pairs_df: pd.DataFrame,
+    data_lookup: Dict[str, Dict[str, Any]],
+    display_attributes: Sequence[str],
+    top_k: int = 5,
+) -> Dict[str, Any]:
+    clusters = build_duplicate_clusters(pairs_df)
+    if not clusters:
+        return {
+            "total_cluster_count": 0,
+            "average_cluster_size": 0.0,
+            "largest_cluster_size": 0,
+            "top_clusters": [],
+        }
+
+    preferred_order = [
+        "first_name",
+        "last_name",
+        "age",
+        "sex",
+        "house_num",
+        "street_name",
+        "zip_code",
+        "race_desc",
+        "ethnic_desc",
+    ]
+    ordered_attributes = [
+        attr for attr in preferred_order if attr in display_attributes
+    ] + [
+        attr for attr in display_attributes if attr not in preferred_order
+    ]
+
+    enriched_clusters = []
+    cluster_sizes = []
+    for cluster in clusters:
+        member_records = [
+            {"id": record_id, **data_lookup.get(record_id, {})}
+            for record_id in cluster["record_ids"]
+        ]
+        cluster_sizes.append(cluster["size"])
+
+        characteristic_rows = []
+        for attr in ordered_attributes:
+            values = [str(record.get(attr, "")).strip() for record in member_records]
+            values = [value for value in values if value]
+            if not values:
+                continue
+            counts = pd.Series(values).value_counts()
+            top_value = str(counts.index[0])
+            support_count = int(counts.iloc[0])
+            support_ratio = support_count / max(cluster["size"], 1)
+            characteristic_rows.append(
+                {
+                    "attribute": attr,
+                    "value": top_value,
+                    "support_count": support_count,
+                    "support_ratio": support_ratio,
+                }
+            )
+
+        characteristic_rows.sort(
+            key=lambda row: (-row["support_ratio"], -row["support_count"], ordered_attributes.index(row["attribute"]))
+        )
+
+        member_preview = []
+        for record in member_records[:3]:
+            preview_bits = [
+                " ".join(filter(None, [record.get("first_name", ""), record.get("last_name", "")])).strip(),
+                " ".join(filter(None, [record.get("house_num", ""), record.get("street_name", "")])).strip(),
+                record.get("zip_code", ""),
+                record.get("age", ""),
+                record.get("sex", ""),
+            ]
+            preview_bits = [bit for bit in preview_bits if bit]
+            member_preview.append(", ".join(preview_bits))
+
+        enriched_clusters.append(
+            {
+                "cluster_id": cluster["cluster_id"],
+                "size": cluster["size"],
+                "shared_characteristics": characteristic_rows[:5],
+                "member_preview": member_preview,
+            }
+        )
+
+    enriched_clusters.sort(key=lambda cluster: (-cluster["size"], cluster["cluster_id"]))
+    return {
+        "total_cluster_count": int(len(clusters)),
+        "average_cluster_size": float(np.mean(cluster_sizes)) if cluster_sizes else 0.0,
+        "largest_cluster_size": int(max(cluster_sizes)) if cluster_sizes else 0,
+        "top_clusters": enriched_clusters[:top_k],
+    }
+
+
 def _record_excerpt(record: Dict[str, Any], attributes: Sequence[str]) -> Dict[str, Any]:
     payload = {"id": str(record.get("id", ""))}
     for attr in attributes:
@@ -550,6 +644,12 @@ class DuplicateDetectionService:
         results_df["is_duplicate"] = results_df["score"] >= threshold_value
         duplicate_df = results_df.loc[results_df["is_duplicate"]].copy().sort_values("score", ascending=False)
         top_df = duplicate_df.head(top_k)
+        cluster_summary = summarize_duplicate_clusters(
+            duplicate_df[["id1", "id2"]],
+            data_lookup=lookup,
+            display_attributes=model.attributes,
+            top_k=5,
+        )
 
         duplicate_pairs = [
             {
@@ -571,7 +671,7 @@ class DuplicateDetectionService:
             "candidate_pair_count": int(len(results_df)),
             "predicted_duplicate_pair_count": int(len(duplicate_df)),
             "duplicate_pairs": duplicate_pairs,
-            "duplicate_clusters": build_duplicate_clusters(duplicate_df[["id1", "id2"]]) if not duplicate_df.empty else [],
+            "duplicate_cluster_summary": cluster_summary,
         }
 
     def check_entry(
