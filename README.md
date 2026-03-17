@@ -318,3 +318,39 @@ Coverage includes:
 - Model I/O shape checks
 - Metric correctness vs scikit-learn
 - End-to-end smoke run (1 epoch train + evaluate, artifact assertions)
+
+## Deployment API
+
+This repo also includes a lightweight FastAPI serving layer for demoing the project as a product.
+
+Supported flows:
+
+1. Upload a CSV/TSV dataset and find likely duplicates inside it.
+2. Load a dataset once and check a new incoming record against it.
+
+Start the API:
+
+```bash
+uvicorn src.api:app --reload --host 0.0.0.0 --port 8000
+```
+
+User-facing web app:
+
+- `http://127.0.0.1:8000/`
+
+Interactive docs:
+
+- `http://127.0.0.1:8000/docs`
+
+Core endpoints:
+
+- `POST /dataset/upload`
+- `POST /dataset/load`
+- `GET /dataset/summary`
+- `DELETE /dataset`
+- `POST /duplicates/find`
+- `POST /duplicates/check-entry`
+
+Detailed usage examples:
+
+- `docs/DEPLOYMENT.md`

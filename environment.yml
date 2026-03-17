@@ -12,4 +12,9 @@ dependencies:
   - numpy
   - tqdm
   - pytest
+  - fastapi
+  - uvicorn
+  - httpx
   - pip
+  - pip:
+      - python-multipart

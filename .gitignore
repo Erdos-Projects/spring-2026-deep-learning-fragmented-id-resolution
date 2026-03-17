@@ -212,3 +212,6 @@ __marimo__/
 
 #Zip files
 *.zip
+
+# Deployment runtime state
+data/runtime/
