@@ -232,7 +232,37 @@ Comparison on the blocked extended-attribute test split:
   - hard-positive recall: `0.9672`
   - hard-negative rejection: `1.0000`
 
-## 12. Deployment Default
+## 12. Encoder Comparison Under the Same Hard-Example Sweep
+
+We repeated the same hard-example weighting sweep for `charcnn`.
+
+Artifacts:
+
+- `models/experiments/hard_weight_tuning_charcnn_blended/tuning_summary.tsv`
+- `models/experiments/encoder_hard_weight_comparison.tsv`
+
+Best overall CharCNN run:
+
+- `models/experiments/hard_weight_tuning_charcnn_blended/both_pos1.00_neg1.00_blended_score`
+  - F1: `0.9766`
+  - PR-AUC: `0.9946`
+  - hard-subset F1: `0.9683`
+  - easy-subset F1: `0.9797`
+
+Best hard-subset CharCNN run:
+
+- `models/experiments/hard_weight_tuning_charcnn_blended/both_pos0.50_neg0.50_blended_score`
+  - F1: `0.9662`
+  - hard-subset F1: `0.9913`
+  - easy-subset F1: `0.9385`
+
+Conclusion:
+
+- CharCNN can slightly outperform the tuned BiLSTM on the mined hard subset in one setting.
+- But it loses too much overall and easy-subset quality to be the better deployment default.
+- The tuned BiLSTM remains the better balanced model.
+
+## 13. Deployment Default
 
 The deployment app currently uses:
 
@@ -241,8 +271,8 @@ The deployment app currently uses:
 
 This makes the product demo reflect the current best validated tradeoff between easy-case accuracy and hard-case robustness.
 
-## 13. Next Iteration Priorities
+## 14. Next Iteration Priorities
 
-1. repeat the same hard-example tuning process for `charcnn`
-2. compare tuned `charcnn` against tuned `bilstm`
-3. better calibration and threshold selection for deployment constraints
+1. improve deployment calibration and threshold selection for review-vs-auto-merge operating points
+2. analyze disagreement cases between TF-IDF, tuned BiLSTM, and CharCNN to identify systematic failure modes
+3. test whether adding or down-weighting volatile fields improves robustness on surname changes and demographic conflicts

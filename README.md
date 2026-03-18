@@ -289,6 +289,26 @@ python src/tune_hard_weighting.py ^
   --run-root models/experiments/hard_weight_tuning_bilstm_blended
 ```
 
+Run the same sweep for CharCNN:
+
+```bash
+python src/tune_hard_weighting.py ^
+  --hard-example-path data/processed/hard_examples_real/labeled_hard_examples_real.tsv ^
+  --attribute-set extended ^
+  --blocking-keys first_name,age ^
+  --blocking-mode any ^
+  --encoder charcnn ^
+  --max-len 128 ^
+  --epochs 15 ^
+  --batch-size 64 ^
+  --lr 0.001 ^
+  --hard-weighting-modes both ^
+  --hard-positive-scales 0.25,0.5,1.0 ^
+  --hard-negative-scales 0.25,0.5,1.0 ^
+  --monitor-metric blended_score ^
+  --run-root models/experiments/hard_weight_tuning_charcnn_blended
+```
+
 ## Apples-to-Apples Comparison Matrix
 
 To compare both model families fairly across:
@@ -381,6 +401,10 @@ Best tuned deployment checkpoint:
 
 This tuned BiLSTM is the current default Siamese model used by the deployment app.
 
+Encoder comparison summary:
+
+- `models/experiments/encoder_hard_weight_comparison.tsv`
+
 Test-set comparison on the blocked extended-attribute setting:
 
 - TF-IDF baseline
@@ -402,12 +426,23 @@ Test-set comparison on the blocked extended-attribute setting:
   - easy-subset F1: `0.9912`
   - hard-positive recall: `0.9672`
   - hard-negative rejection: `1.0000`
+- best overall tuned Siamese CharCNN (`hard_positive_weight_scale=1.00`, `hard_negative_weight_scale=1.00`)
+  - F1: `0.9766`
+  - PR-AUC: `0.9946`
+  - hard-subset F1: `0.9683`
+  - easy-subset F1: `0.9797`
+- best hard-subset tuned Siamese CharCNN (`hard_positive_weight_scale=0.50`, `hard_negative_weight_scale=0.50`)
+  - F1: `0.9662`
+  - PR-AUC: `0.9960`
+  - hard-subset F1: `0.9913`
+  - easy-subset F1: `0.9385`
 
 Interpretation:
 
 - TF-IDF remains the operational non-deep benchmark.
 - The tuned Siamese model now improves both overall F1 and hard-subset F1 relative to the previous Siamese checkpoint.
-- The chosen deployment checkpoint is the best tradeoff we found between easy-case quality and difficult-case behavior.
+- CharCNN can push the mined hard subset slightly higher in one setting, but it gives up too much overall and easy-case quality.
+- The chosen BiLSTM deployment checkpoint is still the best tradeoff we found between easy-case quality and difficult-case behavior.
 
 ## Tests
 

@@ -1,0 +1,4 @@
+encoder	selection_rule	run_dir	test_f1	test_pr_auc	hard_subset_f1	easy_subset_f1	hard_positive_recall	hard_negative_rejection_rate	selected_for_deployment
+bilstm	recommended_tradeoff	models/experiments/hard_weight_tuning_bilstm_blended/both_pos0.50_neg0.25_blended_score	0.9891067538126361	0.9994317925344165	0.9833333333333333	0.9911504424778761	0.9672131147540983	1.0	yes
+charcnn	best_overall	models/experiments/hard_weight_tuning_charcnn_blended/both_pos1.00_neg1.00_blended_score	0.9766454352441614	0.9946080461044474	0.9682539682539683	0.9797101449275363	1.0	0.9130434782608695	no
+charcnn	best_hard_subset	models/experiments/hard_weight_tuning_charcnn_blended/both_pos0.50_neg0.50_blended_score	0.9662447257383966	0.9959986183553164	0.9913419913419913	0.9384615384615385	1.0	0.8260869565217391	no

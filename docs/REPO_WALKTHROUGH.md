@@ -347,6 +347,48 @@ Use when:
 
 - comparing attribute subsets for the Siamese model
 
+## `src/hard_examples.py`
+
+Role:
+
+- mines real hard positives and hard negatives from the labeled pair files
+
+What it does:
+
+- scores pair difficulty from name, address, and attribute overlap
+- identifies hard positives from `DPL`
+- identifies hard negatives from `NDPL`
+- prepares per-pair weights for training and hard-subset reporting
+
+Use when:
+
+- building hard-example artifacts from real labels
+- biasing Siamese training toward informative edge cases
+
+## `src/mine_hard_examples.py`
+
+Role:
+
+- CLI wrapper for hard-example artifact generation
+
+What it does:
+
+- loads prepared records and labeled pair files
+- runs the miner in `src/hard_examples.py`
+- writes TSV and summary artifacts under `data/processed/hard_examples_real/`
+
+## `src/tune_hard_weighting.py`
+
+Role:
+
+- sweep runner for hard-positive and hard-negative weighting scales
+
+What it does:
+
+- launches repeated Siamese training runs
+- varies the hard-example weight scales
+- writes per-run outputs and a compact tuning summary table
+
 ## `src/run_comparison_matrix.py`
 
 Role:
@@ -426,6 +468,19 @@ Contains:
 - `comparison_summary.json`
 - per-run outputs under `siamese/` and `tfidf/` for each scenario and attribute set
 
+### Hard-example tuning runs
+
+Directories:
+
+- `models/experiments/hard_weight_tuning_bilstm_blended/`
+- `models/experiments/hard_weight_tuning_charcnn_blended/`
+
+Contains:
+
+- per-run checkpoints and metrics for each weighting configuration
+- one `tuning_summary.tsv` per encoder
+- `models/experiments/encoder_hard_weight_comparison.tsv` as the compact encoder comparison
+
 ## Important Caveats
 
 ### 1. Older single-run artifacts are not fully apples-to-apples
@@ -472,9 +527,23 @@ From `models/comparisons/apples_to_apples/comparison_summary.json`:
 
 So the current project claim should be based on the controlled matrix, not on older unmatched artifact comparisons.
 
+### 5. The tuned BiLSTM remains the best deployment default
+
+The completed hard-example sweeps show:
+
+- tuned BiLSTM improves both overall and hard-subset performance over the earlier Siamese checkpoint
+- CharCNN can push the mined hard subset slightly higher in one setting
+- but CharCNN gives up too much overall and easy-case quality to replace BiLSTM as the deployment default
+
+Relevant artifacts:
+
+- `models/experiments/hard_weight_tuning_bilstm_blended/tuning_summary.tsv`
+- `models/experiments/hard_weight_tuning_charcnn_blended/tuning_summary.tsv`
+- `models/experiments/encoder_hard_weight_comparison.tsv`
+
 ## Recommended Next Review Questions
 
-1. Which operating point should be used for deployment: max F1, precision-targeted, or recall-targeted?
-2. Where do Siamese and TF-IDF disagree most (hard positives vs hard negatives)?
-3. Should we freeze blocking as `first_name OR age`, or evaluate alternative block keys for robustness?
-4. Should we tune Siamese hyperparameters further now that extended-attribute runs are strong?
+1. Which deployment threshold should be used for review-vs-auto-merge behavior?
+2. Where do tuned BiLSTM and TF-IDF disagree most on real clerical edge cases?
+3. Should volatile fields like `race_desc` and `ethnic_desc` be down-weighted or removed?
+4. Should hard-example mining be expanded with manually reviewed disagreement cases?

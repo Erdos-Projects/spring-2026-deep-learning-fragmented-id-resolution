@@ -21,6 +21,13 @@ By default, the service uses:
 
 That tuned BiLSTM is the current recommended deployment model because it improved both overall F1 and hard-subset F1 over the previous Siamese checkpoint while staying well ahead of the TF-IDF baseline.
 
+We also ran the same hard-example sweep for `siamese_charcnn`:
+
+- `models/experiments/hard_weight_tuning_charcnn_blended/tuning_summary.tsv`
+- `models/experiments/encoder_hard_weight_comparison.tsv`
+
+CharCNN remained available in the app as a comparison model, but it did not beat the tuned BiLSTM on the overall deployment tradeoff.
+
 ## Local run
 
 Create the environment if needed:

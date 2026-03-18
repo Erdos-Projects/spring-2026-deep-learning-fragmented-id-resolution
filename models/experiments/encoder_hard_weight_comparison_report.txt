@@ -1,0 +1,36 @@
+Hard-weighted encoder comparison summary
+======================================
+
+Source files:
+- models/experiments/hard_weight_tuning_bilstm_blended/tuning_summary.tsv
+- models/experiments/hard_weight_tuning_charcnn_blended/tuning_summary.tsv
+- models/experiments/encoder_hard_weight_comparison.tsv
+
+Recommended deployment encoder:
+- bilstm
+- run: models/experiments/hard_weight_tuning_bilstm_blended/both_pos0.50_neg0.25_blended_score
+
+Why:
+- best balanced overall result
+- test F1: 0.9891
+- test PR-AUC: 0.9994
+- hard-subset F1: 0.9833
+- easy-subset F1: 0.9912
+- hard-negative rejection rate: 1.0000
+
+Best overall CharCNN run:
+- run: models/experiments/hard_weight_tuning_charcnn_blended/both_pos1.00_neg1.00_blended_score
+- test F1: 0.9766
+- test PR-AUC: 0.9946
+- hard-subset F1: 0.9683
+- easy-subset F1: 0.9797
+
+Best hard-subset CharCNN run:
+- run: models/experiments/hard_weight_tuning_charcnn_blended/both_pos0.50_neg0.50_blended_score
+- test F1: 0.9662
+- hard-subset F1: 0.9913
+- easy-subset F1: 0.9385
+
+Conclusion:
+- CharCNN can slightly improve the mined hard subset in one configuration.
+- BiLSTM remains the better deployment default because it preserves much stronger overall and easy-case performance.
