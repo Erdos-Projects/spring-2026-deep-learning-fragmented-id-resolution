@@ -444,11 +444,65 @@ select:focus {
   gap: 18px;
 }
 
+.section-text {
+  margin: 0 0 14px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.review-note {
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  background: rgba(180, 74, 45, 0.10);
+  border: 1px solid rgba(180, 74, 45, 0.18);
+  color: var(--warning);
+  line-height: 1.5;
+}
+
 .result-block {
   padding: 18px;
   border-radius: var(--radius-lg);
   background: rgba(255, 248, 238, 0.82);
   border: 1px solid var(--border);
+}
+
+.stats-grid,
+.case-grid,
+.pattern-list {
+  display: grid;
+  gap: 14px;
+}
+
+.stats-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 16px;
+}
+
+.stat-card,
+.case-card,
+.pattern-row {
+  padding: 14px 16px;
+  border-radius: var(--radius-md);
+  background: rgba(35, 26, 18, 0.05);
+  border: 1px solid rgba(35, 26, 18, 0.06);
+}
+
+.stat-card strong,
+.case-card strong {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.case-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.pattern-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 12px;
+  align-items: center;
 }
 
 .cluster-list,
@@ -493,6 +547,11 @@ select:focus {
 @media (max-width: 1120px) {
   .hero,
   .workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .stats-grid,
+  .case-grid {
     grid-template-columns: 1fr;
   }
 

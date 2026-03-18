@@ -63,6 +63,7 @@ class NCVotersDataset(Dataset):
         attributes=None,
         strict_missing_ids=False,
         drop_missing_ids=True,
+        sample_weight_column=None,
     ):
         self.data_df = load_prepared_data(data_path)
         self.data_dict = self.data_df.set_index("id").to_dict("index")
@@ -71,6 +72,7 @@ class NCVotersDataset(Dataset):
             attributes = list(DEFAULT_BASELINE_ATTRIBUTES)
         self.attributes = list(attributes)
         self.max_len = max_len
+        self.sample_weight_column = sample_weight_column
 
         for attr in self.attributes:
             if attr not in self.data_df.columns:
@@ -107,6 +109,11 @@ class NCVotersDataset(Dataset):
 
         self.pairs = pairs_df.reset_index(drop=True)
 
+        if self.sample_weight_column is not None and self.sample_weight_column not in self.pairs.columns:
+            raise ValueError(
+                f"sample_weight_column '{self.sample_weight_column}' not found in pair dataframe."
+            )
+
         if vocab is None:
             self.vocab = Vocabulary()
             all_text = []
@@ -134,6 +141,13 @@ class NCVotersDataset(Dataset):
         x1 = self.vocab.numericalize(s1, self.max_len)
         x2 = self.vocab.numericalize(s2, self.max_len)
 
+        if self.sample_weight_column is not None:
+            return (
+                torch.tensor(x1, dtype=torch.long),
+                torch.tensor(x2, dtype=torch.long),
+                torch.tensor(row["label"], dtype=torch.float),
+                torch.tensor(float(row[self.sample_weight_column]), dtype=torch.float),
+            )
         return (
             torch.tensor(x1, dtype=torch.long),
             torch.tensor(x2, dtype=torch.long),

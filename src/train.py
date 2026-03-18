@@ -8,7 +8,7 @@ import pandas as pd
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, WeightedRandomSampler
 from tqdm import tqdm
 
 try:
@@ -21,6 +21,11 @@ try:
         set_seed,
     )
     from .dataset import NCVotersDataset
+    from .hard_examples import (
+        attach_hard_example_metadata,
+        load_hard_example_artifact,
+        summarize_hard_example_metrics,
+    )
     from .metrics import compute_binary_metrics, select_threshold
     from .model import SiameseNetwork
     from .splits import build_splits, check_split_integrity, load_split_artifact, save_split_artifact
@@ -28,6 +33,7 @@ except ImportError:
     from blocking import compute_block_mask, parse_blocking_keys, summarize_blocking
     from data_utils import count_missing_pair_ids, load_labeled_pairs, load_prepared_data, parse_attributes, set_seed
     from dataset import NCVotersDataset
+    from hard_examples import attach_hard_example_metadata, load_hard_example_artifact, summarize_hard_example_metrics
     from metrics import compute_binary_metrics, select_threshold
     from model import SiameseNetwork
     from splits import build_splits, check_split_integrity, load_split_artifact, save_split_artifact
@@ -77,8 +83,50 @@ def parse_args():
 
     parser.add_argument("--use-weighted-loss", action="store_true")
     parser.add_argument("--class-weight-pos", type=float, default=None)
+    parser.add_argument("--hard-example-path", default=None, help="TSV from src/mine_hard_examples.py")
+    parser.add_argument(
+        "--hard-weighting",
+        choices=["none", "loss", "sampler", "both"],
+        default="none",
+        help="How to use mined hard-example weights during training.",
+    )
+    parser.add_argument(
+        "--hard-weight-scale",
+        type=float,
+        default=1.0,
+        help="Scales mined hard-example weights above 1.0. Ignored when --hard-weighting=none.",
+    )
+    parser.add_argument(
+        "--hard-positive-weight-scale",
+        type=float,
+        default=None,
+        help="Optional override for hard-positive sample weighting scale.",
+    )
+    parser.add_argument(
+        "--hard-negative-weight-scale",
+        type=float,
+        default=None,
+        help="Optional override for hard-negative sample weighting scale.",
+    )
 
-    parser.add_argument("--monitor-metric", choices=["f1", "pr_auc", "recall", "precision", "accuracy"], default="pr_auc")
+    parser.add_argument(
+        "--monitor-metric",
+        choices=[
+            "f1",
+            "pr_auc",
+            "recall",
+            "precision",
+            "accuracy",
+            "hard_subset_f1",
+            "hard_positive_recall",
+            "hard_negative_rejection_rate",
+            "blended_score",
+        ],
+        default="pr_auc",
+    )
+    parser.add_argument("--blended-overall-weight", type=float, default=0.5)
+    parser.add_argument("--blended-hard-positive-weight", type=float, default=0.25)
+    parser.add_argument("--blended-hard-negative-weight", type=float, default=0.25)
     parser.add_argument("--early-stopping-patience", type=int, default=4)
     parser.add_argument("--threshold-mode", choices=["f1", "precision_target"], default="f1")
     parser.add_argument("--precision-target", type=float, default=None)
@@ -122,7 +170,13 @@ def run_epoch(model, loader, criterion, optimizer, device, train_mode=True, disa
     labels_all = []
 
     iterator = tqdm(loader, desc=desc, disable=disable_progress)
-    for x1, x2, labels in iterator:
+    for batch in iterator:
+        if len(batch) == 4:
+            x1, x2, labels, sample_weights = batch
+            sample_weights = sample_weights.to(device).float()
+        else:
+            x1, x2, labels = batch
+            sample_weights = None
         x1 = x1.to(device)
         x2 = x2.to(device)
         labels = labels.to(device).float()
@@ -132,7 +186,14 @@ def run_epoch(model, loader, criterion, optimizer, device, train_mode=True, disa
 
         with torch.set_grad_enabled(train_mode):
             logits = model(x1, x2).squeeze(-1)
-            loss = criterion(logits, labels)
+            loss_values = criterion(logits, labels)
+            if loss_values.ndim == 0:
+                loss = loss_values
+            elif sample_weights is not None:
+                denom = torch.clamp(sample_weights.sum(), min=1e-8)
+                loss = (loss_values * sample_weights).sum() / denom
+            else:
+                loss = loss_values.mean()
 
             if train_mode:
                 loss.backward()
@@ -201,7 +262,28 @@ def _save_confusion_matrix(path, metrics_payload):
     cm_df.to_csv(path, sep="\t")
 
 
-def build_dataset_and_loader(args, pairs_df, vocab, attributes, shuffle=False):
+def compute_monitor_value(args, val_metrics, val_hard_metrics):
+    if args.monitor_metric == "hard_subset_f1":
+        value = float(val_hard_metrics["hard_subset_metrics"].get("f1", float("nan")))
+        return value if np.isfinite(value) else float("-inf")
+    if args.monitor_metric == "hard_positive_recall":
+        value = float(val_hard_metrics.get("hard_positive_recall", float("nan")))
+        return value if np.isfinite(value) else float("-inf")
+    if args.monitor_metric == "hard_negative_rejection_rate":
+        value = float(val_hard_metrics.get("hard_negative_rejection_rate", float("nan")))
+        return value if np.isfinite(value) else float("-inf")
+    if args.monitor_metric == "blended_score":
+        value = (
+            float(args.blended_overall_weight) * float(val_metrics["pr_auc"])
+            + float(args.blended_hard_positive_weight) * float(val_hard_metrics["hard_positive_recall"])
+            + float(args.blended_hard_negative_weight) * float(val_hard_metrics["hard_negative_rejection_rate"])
+        )
+        return value if np.isfinite(value) else float("-inf")
+    value = float(val_metrics[args.monitor_metric])
+    return value if np.isfinite(value) else float("-inf")
+
+
+def build_dataset_and_loader(args, pairs_df, vocab, attributes, shuffle=False, sample_weight_column=None, sampler=None):
     dataset = NCVotersDataset(
         data_path=args.data_path,
         pairs_df=pairs_df,
@@ -210,11 +292,16 @@ def build_dataset_and_loader(args, pairs_df, vocab, attributes, shuffle=False):
         attributes=attributes,
         strict_missing_ids=False,
         drop_missing_ids=True,
+        sample_weight_column=sample_weight_column,
     )
     if len(dataset) == 0:
         return dataset, None
     loader = DataLoader(
-        dataset, batch_size=args.batch_size, shuffle=shuffle, num_workers=args.num_workers
+        dataset,
+        batch_size=args.batch_size,
+        shuffle=(shuffle and sampler is None),
+        sampler=sampler,
+        num_workers=args.num_workers,
     )
     return dataset, loader
 
@@ -244,6 +331,7 @@ def main():
 
     data_df = load_prepared_data(args.data_path)
     pairs_df = load_labeled_pairs(args.dpl_path, args.ndpl_path, fail_on_duplicate_pairs=True)
+    hard_example_df = load_hard_example_artifact(args.hard_example_path) if args.hard_example_path else None
 
     missing_rows, missing_ids = count_missing_pair_ids(pairs_df, data_df["id"].astype(str))
     if missing_rows > 0:
@@ -267,6 +355,16 @@ def main():
     val_pairs = split_df[split_df["split"] == "val"][["pair_id", "id1", "id2", "label"]].copy()
     test_pairs = split_df[split_df["split"] == "test"][["pair_id", "id1", "id2", "label"]].copy()
 
+    train_pairs = attach_hard_example_metadata(
+        train_pairs,
+        hard_example_df,
+        weight_scale=args.hard_weight_scale,
+        hard_positive_weight_scale=args.hard_positive_weight_scale,
+        hard_negative_weight_scale=args.hard_negative_weight_scale,
+    )
+    val_pairs = attach_hard_example_metadata(val_pairs, hard_example_df)
+    test_pairs = attach_hard_example_metadata(test_pairs, hard_example_df)
+
     train_block_mask = compute_block_mask(train_pairs, data_df, blocking_keys, args.blocking_mode)
     val_block_mask = compute_block_mask(val_pairs, data_df, blocking_keys, args.blocking_mode)
     test_block_mask = compute_block_mask(test_pairs, data_df, blocking_keys, args.blocking_mode)
@@ -288,10 +386,22 @@ def main():
         attributes=attributes,
         strict_missing_ids=False,
         drop_missing_ids=True,
+        sample_weight_column=("sample_weight" if args.hard_weighting in {"loss", "both"} else None),
     )
     if len(train_dataset) == 0:
         raise ValueError("Training candidate set is empty after blocking.")
     vocab = train_dataset.vocab
+
+    train_sampler = None
+    if args.hard_weighting in {"sampler", "both"}:
+        sampler_weights = torch.as_tensor(
+            train_candidate_pairs["sample_weight"].astype(float).to_numpy(), dtype=torch.double
+        )
+        train_sampler = WeightedRandomSampler(
+            weights=sampler_weights,
+            num_samples=len(train_candidate_pairs),
+            replacement=True,
+        )
 
     val_dataset, val_loader = build_dataset_and_loader(
         args=args,
@@ -309,7 +419,11 @@ def main():
     )
 
     train_loader = DataLoader(
-        train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers
+        train_dataset,
+        batch_size=args.batch_size,
+        shuffle=(train_sampler is None),
+        sampler=train_sampler,
+        num_workers=args.num_workers,
     )
 
     model = SiameseNetwork(
@@ -328,11 +442,22 @@ def main():
         use_weighted_loss=args.use_weighted_loss,
     )
     if pos_weight is not None:
-        criterion = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([pos_weight], device=device))
+        criterion = nn.BCEWithLogitsLoss(
+            pos_weight=torch.tensor([pos_weight], device=device),
+            reduction="none",
+        )
         print(f"Using weighted BCEWithLogitsLoss with pos_weight={pos_weight:.6f}")
     else:
-        criterion = nn.BCEWithLogitsLoss()
+        criterion = nn.BCEWithLogitsLoss(reduction="none")
         print("Using unweighted BCEWithLogitsLoss.")
+    if args.hard_weighting != "none":
+        print(
+            f"Using hard-example weighting mode={args.hard_weighting} "
+            f"scale={args.hard_weight_scale:.2f}, "
+            f"hard_positive_scale={args.hard_positive_weight_scale if args.hard_positive_weight_scale is not None else args.hard_weight_scale:.2f}, "
+            f"hard_negative_scale={args.hard_negative_weight_scale if args.hard_negative_weight_scale is not None else args.hard_weight_scale:.2f}. "
+            f"Train hard examples={int(train_candidate_pairs['hard_example'].astype(bool).sum())}."
+        )
 
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
 
@@ -384,8 +509,22 @@ def main():
         )
         train_metrics = compute_binary_metrics(train_y_true, train_y_prob, threshold=epoch_threshold)
         val_metrics = compute_binary_metrics(val_y_true, val_y_prob, threshold=epoch_threshold)
+        train_hard_metrics = summarize_hard_example_metrics(train_pairs, train_y_true, train_y_prob, epoch_threshold)
+        val_hard_metrics = summarize_hard_example_metrics(val_pairs, val_y_true, val_y_prob, epoch_threshold)
+        train_metrics["hard_example_metrics"] = train_hard_metrics
+        val_metrics["hard_example_metrics"] = val_hard_metrics
 
-        monitor_value = val_metrics[args.monitor_metric]
+        monitor_value = compute_monitor_value(args, val_metrics, val_hard_metrics)
+        blended_value = compute_monitor_value(
+            argparse.Namespace(
+                monitor_metric="blended_score",
+                blended_overall_weight=args.blended_overall_weight,
+                blended_hard_positive_weight=args.blended_hard_positive_weight,
+                blended_hard_negative_weight=args.blended_hard_negative_weight,
+            ),
+            val_metrics,
+            val_hard_metrics,
+        )
         history_rows.append(
             {
                 "epoch": epoch,
@@ -408,13 +547,23 @@ def main():
                 "monitor_value": monitor_value,
                 "train_candidate_count": int(train_block_mask.sum()),
                 "val_candidate_count": int(val_block_mask.sum()),
+                "train_hard_example_count": int(train_hard_metrics["hard_example_count"]),
+                "val_hard_example_count": int(val_hard_metrics["hard_example_count"]),
+                "train_hard_positive_recall": train_hard_metrics["hard_positive_recall"],
+                "train_hard_negative_rejection_rate": train_hard_metrics["hard_negative_rejection_rate"],
+                "val_hard_positive_recall": val_hard_metrics["hard_positive_recall"],
+                "val_hard_negative_rejection_rate": val_hard_metrics["hard_negative_rejection_rate"],
+                "val_hard_subset_f1": val_hard_metrics["hard_subset_metrics"].get("f1", float("nan")),
+                "blended_score": blended_value,
             }
         )
 
         print(
             f"Train Loss={train_loss:.4f} Val Loss={val_loss:.4f} "
             f"Val F1={val_metrics['f1']:.4f} Val PR-AUC={val_metrics['pr_auc']:.4f} "
-            f"Val ROC-AUC={val_metrics['roc_auc']:.4f} Threshold={epoch_threshold:.2f}"
+            f"Val ROC-AUC={val_metrics['roc_auc']:.4f} Threshold={epoch_threshold:.2f} "
+            f"HardPosRecall={val_hard_metrics['hard_positive_recall']:.4f} "
+            f"HardNegReject={val_hard_metrics['hard_negative_rejection_rate']:.4f}"
         )
 
         if monitor_value > best_metric_value:
@@ -456,6 +605,9 @@ def main():
         test_y_prob = restore_full_probabilities(test_pairs, test_block_mask, test_candidate_y_prob)
     test_metrics = compute_binary_metrics(test_y_true, test_y_prob, threshold=best_threshold)
     test_metrics["blocking"] = blocking_summary["test"]
+    test_metrics["hard_example_metrics"] = summarize_hard_example_metrics(
+        test_pairs, test_y_true, test_y_prob, best_threshold
+    )
 
     checkpoint_path = run_dir / "best_model.pth"
     checkpoint = {
@@ -481,6 +633,14 @@ def main():
             "test_frac": args.test_frac,
             "blocking_keys": blocking_keys,
             "blocking_mode": args.blocking_mode,
+            "hard_example_path": args.hard_example_path,
+            "hard_weighting": args.hard_weighting,
+            "hard_weight_scale": args.hard_weight_scale,
+            "hard_positive_weight_scale": args.hard_positive_weight_scale,
+            "hard_negative_weight_scale": args.hard_negative_weight_scale,
+            "blended_overall_weight": args.blended_overall_weight,
+            "blended_hard_positive_weight": args.blended_hard_positive_weight,
+            "blended_hard_negative_weight": args.blended_hard_negative_weight,
         },
         "best_threshold": best_threshold,
         "best_epoch": best_epoch,
@@ -511,6 +671,14 @@ def main():
         "blocking_keys": blocking_keys,
         "blocking_mode": args.blocking_mode,
         "blocking_summary": blocking_summary,
+        "hard_example_path": args.hard_example_path,
+        "hard_weighting": args.hard_weighting,
+        "hard_weight_scale": args.hard_weight_scale,
+        "hard_positive_weight_scale": args.hard_positive_weight_scale,
+        "hard_negative_weight_scale": args.hard_negative_weight_scale,
+        "blended_overall_weight": args.blended_overall_weight,
+        "blended_hard_positive_weight": args.blended_hard_positive_weight,
+        "blended_hard_negative_weight": args.blended_hard_negative_weight,
         "paths": {
             "checkpoint": str(checkpoint_path),
             "split": str(split_path),

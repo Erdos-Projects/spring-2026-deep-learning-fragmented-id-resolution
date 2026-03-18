@@ -127,7 +127,43 @@ Evaluation supports two scenarios:
 
 This separates pure scoring quality from realistic candidate-generation conditions.
 
-## 8. Apples-to-Apples Comparison Design
+## 8. Hard-Example Mining and Weighted Training
+
+The repository now mines hard positives and hard negatives directly from the labeled pair files instead of relying first on synthetic label generation.
+
+Definitions:
+
+- hard positives: true duplicate pairs from `DPL` that look unusually different
+- hard negatives: true non-duplicate pairs from `NDPL` that look unusually similar
+
+Implementation:
+
+- mining logic: `src/hard_examples.py`
+- artifact generation: `src/mine_hard_examples.py`
+- weighting-aware training: `src/train.py`
+- tuning sweep: `src/tune_hard_weighting.py`
+
+The mining procedure computes pair-level difficulty features such as:
+
+- surname changes / surname expansion
+- address changes
+- name similarity
+- address similarity
+- strong exact matches on household and demographic fields
+
+The current real-data hard-example artifact is:
+
+- `data/processed/hard_examples_real/labeled_hard_examples_real.tsv`
+
+Current counts:
+
+- hard examples: `3744`
+- hard positives: `1950`
+- hard negatives: `1794`
+
+These hard examples are then used as training weights, not as a replacement for the original labeled distribution.
+
+## 9. Apples-to-Apples Comparison Design
 
 `src/run_comparison_matrix.py` runs a full comparison matrix across:
 
@@ -140,7 +176,7 @@ Outputs:
 - `models/comparisons/apples_to_apples/comparison_summary.tsv`
 - `models/comparisons/apples_to_apples/comparison_summary.json`
 
-## 9. Current Results Snapshot (March 4, 2026)
+## 10. Current Results Snapshot (March 4, 2026)
 
 From `models/comparisons/apples_to_apples/comparison_summary.json`:
 
@@ -163,8 +199,50 @@ Conclusion from the controlled matrix:
 - Shared blocking is effective for scale.
 - The Siamese model outperforms TF-IDF when compared under matched split, attributes, and blocking conditions.
 
-## 10. Next Iteration Priorities
+## 11. Hard-Weighted Siamese Tuning Snapshot (March 18, 2026)
 
-1. hard-case error analysis (where methods disagree)
-2. better calibration and threshold selection for deployment constraints
-3. optional architecture iteration (stronger encoder) only after baseline protocol remains fixed
+After mining hard examples from real `DPL/NDPL` pairs, we tuned separate hard-positive and hard-negative weighting scales for the BiLSTM Siamese model.
+
+The sweep output is:
+
+- `models/experiments/hard_weight_tuning_bilstm_blended/tuning_summary.tsv`
+
+The deployment-selected checkpoint is:
+
+- `models/experiments/hard_weight_tuning_bilstm_blended/both_pos0.50_neg0.25_blended_score/best_model.pth`
+
+Reason for selection:
+
+- it improved overall test F1 over the previous Siamese checkpoint
+- it improved hard-subset F1 substantially over TF-IDF and modestly over the earlier Siamese
+- it achieved perfect rejection on the mined hard negatives in the test split
+- it preserved easy-subset quality
+
+Comparison on the blocked extended-attribute test split:
+
+- TF-IDF baseline
+  - F1: `0.9630`
+  - hard-subset F1: `0.8793`
+- previous Siamese BiLSTM
+  - F1: `0.9849`
+  - hard-subset F1: `0.9677`
+- tuned Siamese BiLSTM (`hard_positive_weight_scale=0.50`, `hard_negative_weight_scale=0.25`)
+  - F1: `0.9891`
+  - hard-subset F1: `0.9833`
+  - hard-positive recall: `0.9672`
+  - hard-negative rejection: `1.0000`
+
+## 12. Deployment Default
+
+The deployment app currently uses:
+
+- TF-IDF as the non-deep benchmark
+- the tuned BiLSTM Siamese checkpoint above as the default deep model
+
+This makes the product demo reflect the current best validated tradeoff between easy-case accuracy and hard-case robustness.
+
+## 13. Next Iteration Priorities
+
+1. repeat the same hard-example tuning process for `charcnn`
+2. compare tuned `charcnn` against tuned `bilstm`
+3. better calibration and threshold selection for deployment constraints

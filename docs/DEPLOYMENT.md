@@ -13,7 +13,13 @@ The API supports the saved models already present in the repo:
 - `siamese_charcnn`
 - `tfidf`
 
-By default, the service uses the saved blocked-pipeline extended-attribute artifacts.
+By default, the service uses:
+
+- TF-IDF from the saved blocked-pipeline extended-attribute baseline artifacts
+- the tuned BiLSTM Siamese checkpoint from:
+  - `models/experiments/hard_weight_tuning_bilstm_blended/both_pos0.50_neg0.25_blended_score/best_model.pth`
+
+That tuned BiLSTM is the current recommended deployment model because it improved both overall F1 and hard-subset F1 over the previous Siamese checkpoint while staying well ahead of the TF-IDF baseline.
 
 ## Local run
 

@@ -215,3 +215,4 @@ __marimo__/
 
 # Deployment runtime state
 data/runtime*/
+data/pytest_tmp/

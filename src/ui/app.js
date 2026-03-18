@@ -185,76 +185,290 @@ function setDatasetMode(mode) {
   byId("dataset-upload-panel").classList.toggle("active", mode === "upload");
 }
 
+function formatScore(value) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) {
+    return "n/a";
+  }
+  return Number(value).toFixed(3);
+}
+
+function recordPreview(record) {
+  const name = [record.first_name, record.last_name].filter(Boolean).join(" ").trim();
+  const address = [record.house_num, record.street_name].filter(Boolean).join(" ").trim();
+  const suffix = [record.zip_code, record.age ? `age ${record.age}` : "", record.sex].filter(Boolean).join(", ");
+  return [name ? `<strong>${name}</strong>` : "", address, suffix].filter(Boolean).join(", ");
+}
+
+function renderSignalBadges(signals = []) {
+  if (!signals.length) {
+    return "";
+  }
+  return `
+    <div class="badge-row">
+      ${signals.map((signal) => `<span class="badge">${signal}</span>`).join("")}
+    </div>
+  `;
+}
+
+function renderPairSection(title, subtitle, rows = [], options = {}) {
+  const reviewNote = options.reviewRecommended
+    ? `
+      <div class="review-note">
+        <strong>Review recommended.</strong>
+        These are disagreement cases between models and should be checked manually before acting on them.
+      </div>
+    `
+    : "";
+  return `
+    <div class="result-block">
+      <h3>${title}</h3>
+      <p class="section-text">${subtitle}</p>
+      ${reviewNote}
+      <table class="results-table">
+        <thead>
+          <tr>
+            <th>Pair</th>
+            <th>Score</th>
+            <th>Record comparison</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.length ? rows.map((pair) => `
+            <tr>
+              <td class="mono">${pair.id1} / ${pair.id2}</td>
+              <td>
+                ${formatScore(pair.score)}
+                ${pair.comparison_score !== undefined ? `<div class="hint-text">${pair.comparison_model_name}: ${formatScore(pair.comparison_score)}</div>` : ""}
+              </td>
+              <td>
+                ${renderSignalBadges(pair.signals)}
+                <div>${recordPreview(pair.record1)}</div>
+                <div>${recordPreview(pair.record2)}</div>
+              </td>
+            </tr>
+          `).join("") : `
+            <tr><td colspan="3">No pairs to show for this section.</td></tr>
+          `}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderScoreSummary(scoreSummary, clusterSummary, payload) {
+  const duplicateScores = scoreSummary?.duplicates || {};
+  const rejectedScores = scoreSummary?.rejected || {};
+  return `
+    <div class="result-block">
+      <div class="badge-row">
+        <span class="badge">Model: ${payload.model_name}</span>
+        <span class="badge">Threshold: ${formatScore(payload.threshold)}</span>
+        <span class="badge">Candidates: ${payload.candidate_pair_count}</span>
+        <span class="badge">Duplicates: ${payload.predicted_duplicate_pair_count}</span>
+        <span class="badge">Clusters: ${clusterSummary.total_cluster_count || 0}</span>
+      </div>
+      <div class="stats-grid">
+        <div class="stat-card">
+          <span class="mini-label">Acceptance rate</span>
+          <strong>${formatScore((scoreSummary?.acceptance_rate || 0) * 100)}%</strong>
+        </div>
+        <div class="stat-card">
+          <span class="mini-label">Duplicate score range</span>
+          <strong>${formatScore(duplicateScores.min)} to ${formatScore(duplicateScores.max)}</strong>
+          <span class="hint-text">Median ${formatScore(duplicateScores.median)}</span>
+        </div>
+        <div class="stat-card">
+          <span class="mini-label">Rejected score range</span>
+          <strong>${formatScore(rejectedScores.min)} to ${formatScore(rejectedScores.max)}</strong>
+          <span class="hint-text">Median ${formatScore(rejectedScores.median)}</span>
+        </div>
+        <div class="stat-card">
+          <span class="mini-label">Cluster sizes</span>
+          <strong>${clusterSummary.two_record_cluster_count || 0} pairs / ${clusterSummary.three_plus_record_cluster_count || 0} larger clusters</strong>
+          <span class="hint-text">Largest cluster ${clusterSummary.largest_cluster_size || 0} records</span>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderClusterSummary(clusterSummary) {
+  const clusters = clusterSummary.top_clusters || [];
+  return `
+    <div class="result-block">
+      <h3>Duplicate cluster summary</h3>
+      <p class="section-text">
+        ${clusterSummary.total_cluster_count || 0} predicted clusters, average size
+        ${formatScore(clusterSummary.average_cluster_size || 0)}, largest cluster
+        ${clusterSummary.largest_cluster_size || 0} records. Showing the top ${clusters.length} cluster profiles.
+      </p>
+      <div class="cluster-list">
+        ${clusters.length ? clusters.map((cluster) => `
+          <div class="cluster-chip">
+            <strong>${cluster.cluster_id}</strong> (${cluster.size} records)
+            <div class="badge-row">
+              ${(cluster.shared_characteristics || []).map((item) => `
+                <span class="badge">${item.attribute}: ${item.value} (${item.support_count}/${cluster.size})</span>
+              `).join("")}
+            </div>
+            <div class="hint-text">
+              ${cluster.member_preview && cluster.member_preview.length
+                ? `Example records: ${cluster.member_preview.join(" | ")}`
+                : "No record preview available."}
+            </div>
+          </div>
+        `).join("") : "No clusters formed because no duplicate pairs were predicted."}
+      </div>
+    </div>
+  `;
+}
+
+function renderPatternSummary(patterns = []) {
+  return `
+    <div class="result-block">
+      <h3>Duplicate pattern summary</h3>
+      <p class="section-text">These counts summarize what kinds of predicted duplicates are appearing in this search run.</p>
+      <div class="pattern-list">
+        ${patterns.length ? patterns.map((pattern) => `
+          <div class="pattern-row">
+            <span>${pattern.label}</span>
+            <strong>${pattern.count}</strong>
+            <span class="hint-text">${formatScore(pattern.share * 100)}%</span>
+          </div>
+        `).join("") : "No duplicate patterns to summarize."}
+      </div>
+    </div>
+  `;
+}
+
+function renderRepresentativeCases(cases = {}) {
+  const caseRows = [
+    {
+      label: "Highest-confidence duplicate",
+      value: cases.highest_confidence_duplicate,
+    },
+    {
+      label: "Most borderline duplicate",
+      value: cases.most_borderline_duplicate,
+    },
+    {
+      label: "Closest rejected pair",
+      value: cases.closest_rejected_pair,
+    },
+  ].filter((item) => item.value);
+
+  const largestCluster = cases.largest_cluster;
+  return `
+    <div class="result-block">
+      <h3>Representative cases</h3>
+      <div class="case-grid">
+        ${caseRows.map((item) => `
+          <div class="case-card">
+            <strong>${item.label}</strong>
+            <div class="badge-row">
+              <span class="badge mono">${item.value.id1} / ${item.value.id2}</span>
+              <span class="badge">Score: ${formatScore(item.value.score)}</span>
+            </div>
+            ${renderSignalBadges(item.value.signals)}
+            <div>${recordPreview(item.value.record1)}</div>
+            <div>${recordPreview(item.value.record2)}</div>
+          </div>
+        `).join("")}
+        ${largestCluster ? `
+          <div class="case-card">
+            <strong>Largest predicted cluster</strong>
+            <div class="badge-row">
+              <span class="badge">${largestCluster.cluster_id}</span>
+              <span class="badge">${largestCluster.size} records</span>
+            </div>
+            <div class="badge-row">
+              ${(largestCluster.shared_characteristics || []).map((item) => `
+                <span class="badge">${item.attribute}: ${item.value}</span>
+              `).join("")}
+            </div>
+          </div>
+        ` : ""}
+      </div>
+    </div>
+  `;
+}
+
+function renderDisagreementSection(disagreement) {
+  if (!disagreement || !disagreement.available) {
+    return `
+      <div class="result-block">
+        <h3>Model disagreement analysis</h3>
+        <p class="section-text">${disagreement?.reason || "No comparison model is available for disagreement analysis."}</p>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="result-block">
+      <h3>Model disagreement analysis</h3>
+      <p class="section-text">
+        Compared against <span class="mono">${disagreement.comparison_model_name}</span>.
+        Agreement rate across candidate pairs: ${formatScore(disagreement.agreement_rate * 100)}%.
+      </p>
+      <div class="stats-grid">
+        <div class="stat-card">
+          <span class="mini-label">Selected model only</span>
+          <strong>${disagreement.selected_only_duplicate_count}</strong>
+        </div>
+        <div class="stat-card">
+          <span class="mini-label">Comparison model only</span>
+          <strong>${disagreement.comparison_only_duplicate_count}</strong>
+        </div>
+      </div>
+    </div>
+    ${renderPairSection(
+      "Review recommended: selected model says duplicate",
+      "These pairs were flagged as duplicates by the selected model but not by the comparison model.",
+      disagreement.selected_only_duplicates || [],
+      { reviewRecommended: true }
+    )}
+    ${renderPairSection(
+      "Review recommended: comparison model says duplicate",
+      "These pairs were flagged as duplicates by the comparison model but not by the selected model.",
+      disagreement.comparison_only_duplicates || [],
+      { reviewRecommended: true }
+    )}
+  `;
+}
+
 function renderFindResults(payload) {
   const root = byId("results-root");
-  const pairRows = payload.duplicate_pairs || [];
   const clusterSummary = payload.duplicate_cluster_summary || {
     total_cluster_count: 0,
     average_cluster_size: 0,
     largest_cluster_size: 0,
+    two_record_cluster_count: 0,
+    three_plus_record_cluster_count: 0,
     top_clusters: [],
   };
-  const clusters = clusterSummary.top_clusters || [];
 
   root.innerHTML = `
     <div class="results-stack">
-      <div class="result-block">
-        <div class="badge-row">
-          <span class="badge">Model: ${payload.model_name}</span>
-          <span class="badge">Threshold: ${Number(payload.threshold).toFixed(3)}</span>
-          <span class="badge">Candidates: ${payload.candidate_pair_count}</span>
-          <span class="badge">Duplicates: ${payload.predicted_duplicate_pair_count}</span>
-        </div>
-        <table class="results-table">
-          <thead>
-            <tr>
-              <th>Pair</th>
-              <th>Score</th>
-              <th>Record excerpt</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${pairRows.length ? pairRows.map((pair) => `
-              <tr>
-                <td class="mono">${pair.id1} / ${pair.id2}</td>
-                <td>${Number(pair.score).toFixed(3)}</td>
-                <td>
-                  <div><strong>${pair.record1.first_name || ""} ${pair.record1.last_name || ""}</strong>, ${pair.record1.house_num || ""} ${pair.record1.street_name || ""}, ${pair.record1.zip_code || ""}</div>
-                  <div><strong>${pair.record2.first_name || ""} ${pair.record2.last_name || ""}</strong>, ${pair.record2.house_num || ""} ${pair.record2.street_name || ""}, ${pair.record2.zip_code || ""}</div>
-                </td>
-              </tr>
-            `).join("") : `
-              <tr><td colspan="3">No duplicate pairs were predicted for the current threshold.</td></tr>
-            `}
-          </tbody>
-        </table>
-      </div>
-      <div class="result-block">
-        <h3>Duplicate cluster summary</h3>
-        <p>
-          ${clusterSummary.total_cluster_count} predicted clusters,
-          average size ${Number(clusterSummary.average_cluster_size || 0).toFixed(2)},
-          largest cluster ${clusterSummary.largest_cluster_size} records.
-          Showing the top ${clusters.length} clusters by size.
-        </p>
-        <div class="cluster-list">
-          ${clusters.length ? clusters.map((cluster) => `
-            <div class="cluster-chip">
-              <strong>${cluster.cluster_id}</strong> (${cluster.size} records)
-              <div class="badge-row">
-                ${cluster.shared_characteristics.map((item) => `
-                  <span class="badge">${item.attribute}: ${item.value} (${item.support_count}/${cluster.size})</span>
-                `).join("")}
-              </div>
-              <div class="hint-text">
-                ${cluster.member_preview && cluster.member_preview.length
-                  ? `Example records: ${cluster.member_preview.join(" | ")}`
-                  : "No record preview available."}
-              </div>
-            </div>
-          `).join("") : "No clusters formed because no duplicate pairs were predicted."}
-        </div>
-      </div>
+      ${renderScoreSummary(payload.score_summary, clusterSummary, payload)}
+      ${renderPairSection(
+        "High-confidence duplicates",
+        "The strongest predicted duplicates in this search run.",
+        payload.high_confidence_duplicates || []
+      )}
+      ${renderPairSection(
+        "Borderline duplicates",
+        "The lowest-scoring pairs that still passed the duplicate threshold.",
+        payload.borderline_duplicates || []
+      )}
+      ${renderPairSection(
+        "Near-miss non-duplicates",
+        "Pairs that came closest to the threshold but were still rejected.",
+        payload.near_miss_non_duplicates || []
+      )}
+      ${renderRepresentativeCases(payload.representative_cases || {})}
+      ${renderPatternSummary(payload.duplicate_pattern_summary || [])}
+      ${renderClusterSummary(clusterSummary)}
+      ${renderDisagreementSection(payload.disagreement_analysis)}
     </div>
   `;
 }

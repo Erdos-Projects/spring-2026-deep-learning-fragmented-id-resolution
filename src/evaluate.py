@@ -11,12 +11,14 @@ from tqdm import tqdm
 try:
     from .blocking import compute_block_mask, parse_blocking_keys, summarize_blocking
     from .dataset import NCVotersDataset, Vocabulary
+    from .hard_examples import attach_hard_example_metadata, load_hard_example_artifact, summarize_hard_example_metrics
     from .metrics import compute_binary_metrics, select_threshold
     from .model import SiameseNetwork
     from .splits import check_split_integrity, load_split_artifact
 except ImportError:
     from blocking import compute_block_mask, parse_blocking_keys, summarize_blocking
     from dataset import NCVotersDataset, Vocabulary
+    from hard_examples import attach_hard_example_metadata, load_hard_example_artifact, summarize_hard_example_metrics
     from metrics import compute_binary_metrics, select_threshold
     from model import SiameseNetwork
     from splits import check_split_integrity, load_split_artifact
@@ -40,6 +42,7 @@ def parse_args():
         help="Override checkpoint blocking keys. Use 'none' to disable. Default: use checkpoint setting.",
     )
     parser.add_argument("--blocking-mode", choices=["all", "any"], default=None)
+    parser.add_argument("--hard-example-path", default=None, help="Optional TSV from src/mine_hard_examples.py")
     parser.add_argument("--output-dir", default="models/eval")
     parser.add_argument("--output-prefix", default="evaluation")
     parser.add_argument("--disable-progress", action="store_true")
@@ -100,6 +103,7 @@ def main():
     checkpoint = torch.load(args.model_path, map_location=device)
     config = checkpoint["config"]
     vocab = Vocabulary.from_dict(checkpoint["vocab"])
+    hard_example_df = load_hard_example_artifact(args.hard_example_path) if args.hard_example_path else None
 
     data_path = args.data_path if args.data_path else config["data_path"]
     split_df = load_split_artifact(args.split_path)
@@ -108,6 +112,7 @@ def main():
     split_pairs = split_df[split_df["split"] == args.split_name][["pair_id", "id1", "id2", "label"]].copy()
     if split_pairs.empty:
         raise ValueError(f"Split '{args.split_name}' is empty in {args.split_path}")
+    split_pairs = attach_hard_example_metadata(split_pairs, hard_example_df)
 
     blocking_keys = (
         parse_blocking_keys(args.blocking_keys, default_keys=[])
@@ -171,6 +176,7 @@ def main():
 
     metrics = compute_binary_metrics(y_true, y_prob, threshold=chosen_threshold)
     metrics["blocking"] = summarize_blocking(y_true, candidate_mask)
+    metrics["hard_example_metrics"] = summarize_hard_example_metrics(split_pairs, y_true, y_prob, chosen_threshold)
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -185,6 +191,7 @@ def main():
             "split_summary": split_summary,
             "blocking_keys": blocking_keys,
             "blocking_mode": blocking_mode,
+            "hard_example_path": args.hard_example_path,
             "encoder_type": config.get("encoder_type", "bilstm"),
             "model_path": args.model_path,
             "split_path": args.split_path,
@@ -193,7 +200,25 @@ def main():
         json.dump(payload, f, indent=2)
 
     tsv_path = output_dir / f"{args.output_prefix}_{args.split_name}_metrics.tsv"
-    pd.DataFrame([metrics]).to_csv(tsv_path, sep="\t", index=False)
+    hard_payload = metrics.get("hard_example_metrics", {})
+    flat_metrics = {k: v for k, v in metrics.items() if k not in {"confusion_matrix", "blocking", "hard_example_metrics"}}
+    flat_metrics.update(metrics["blocking"])
+    flat_metrics.update(
+        {
+            "tn": metrics["confusion_matrix"]["tn"],
+            "fp": metrics["confusion_matrix"]["fp"],
+            "fn": metrics["confusion_matrix"]["fn"],
+            "tp": metrics["confusion_matrix"]["tp"],
+            "hard_example_count": hard_payload.get("hard_example_count", 0),
+            "hard_positive_count": hard_payload.get("hard_positive_count", 0),
+            "hard_negative_count": hard_payload.get("hard_negative_count", 0),
+            "hard_positive_recall": hard_payload.get("hard_positive_recall", float("nan")),
+            "hard_negative_rejection_rate": hard_payload.get("hard_negative_rejection_rate", float("nan")),
+            "hard_subset_f1": hard_payload.get("hard_subset_metrics", {}).get("f1", float("nan")),
+            "easy_subset_f1": hard_payload.get("easy_subset_metrics", {}).get("f1", float("nan")),
+        }
+    )
+    pd.DataFrame([flat_metrics]).to_csv(tsv_path, sep="\t", index=False)
 
     cm_path = output_dir / f"{args.output_prefix}_{args.split_name}_confusion_matrix.tsv"
     save_confusion_matrix(cm_path, metrics)

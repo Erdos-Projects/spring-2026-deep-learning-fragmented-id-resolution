@@ -1,0 +1,55 @@
+{
+  "total_pairs": 107961,
+  "hard_example_count": 3744,
+  "hard_positive_count": 1950,
+  "hard_negative_count": 1794,
+  "top_reasons": [
+    {
+      "reason": "address_changed",
+      "count": 1950
+    },
+    {
+      "reason": "address_similarity_low",
+      "count": 1949
+    },
+    {
+      "reason": "overall_similarity_low",
+      "count": 1944
+    },
+    {
+      "reason": "full_name_similarity_low",
+      "count": 1889
+    },
+    {
+      "reason": "zip_changed",
+      "count": 1836
+    },
+    {
+      "reason": "same_sex",
+      "count": 1503
+    },
+    {
+      "reason": "last_name_differs",
+      "count": 1266
+    },
+    {
+      "reason": "same_first_name",
+      "count": 1230
+    },
+    {
+      "reason": "same_last_name",
+      "count": 466
+    },
+    {
+      "reason": "sex_changed",
+      "count": 135
+    }
+  ],
+  "hard_positive_threshold": 5.5,
+  "hard_negative_threshold": 1.75,
+  "hard_positive_quantile": 0.85,
+  "hard_negative_quantile": 0.99,
+  "paths": {
+    "artifact": "data\\processed\\hard_examples_real\\labeled_hard_examples_real.tsv"
+  }
+}

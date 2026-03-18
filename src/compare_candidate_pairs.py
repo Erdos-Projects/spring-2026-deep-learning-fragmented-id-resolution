@@ -36,7 +36,7 @@ def parse_args():
     parser.add_argument("--data-path", default="data/processed/ncvoters_prepared.tsv")
     parser.add_argument(
         "--siamese-model-path",
-        default="models/comparisons/apples_to_apples_with_charcnn/siamese_bilstm/pair_scoring/extended/best_model.pth",
+        default="models/experiments/hard_weight_tuning_bilstm_blended/both_pos0.50_neg0.25_blended_score/best_model.pth",
     )
     parser.add_argument(
         "--tfidf-run-dir",

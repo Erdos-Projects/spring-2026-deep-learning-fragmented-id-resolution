@@ -23,7 +23,7 @@ DEFAULT_RUNTIME_DIR = Path("data/runtime")
 DEFAULT_MODEL_SPECS = {
     "siamese_bilstm": {
         "kind": "siamese",
-        "path": "models/comparisons/apples_to_apples_with_charcnn/siamese_bilstm/blocked_pipeline/extended/best_model.pth",
+        "path": "models/experiments/hard_weight_tuning_bilstm_blended/both_pos0.50_neg0.25_blended_score/best_model.pth",
     },
     "siamese_charcnn": {
         "kind": "siamese",
@@ -232,9 +232,11 @@ def filter_entry_candidates(
     return candidates
 
 
-def build_duplicate_clusters(pairs_df: pd.DataFrame) -> List[Dict[str, Any]]:
+def _compute_clusters_and_membership(
+    pairs_df: pd.DataFrame,
+) -> tuple[List[Dict[str, Any]], Dict[str, str]]:
     if pairs_df.empty:
-        return []
+        return [], {}
 
     parent: Dict[str, str] = {}
 
@@ -257,7 +259,7 @@ def build_duplicate_clusters(pairs_df: pd.DataFrame) -> List[Dict[str, Any]]:
     for node in set(pairs_df["id1"].astype(str)).union(set(pairs_df["id2"].astype(str))):
         clusters.setdefault(find(node), set()).add(node)
 
-    return [
+    cluster_rows = [
         {
             "cluster_id": f"cluster_{idx:03d}",
             "record_ids": sorted(record_ids),
@@ -265,6 +267,16 @@ def build_duplicate_clusters(pairs_df: pd.DataFrame) -> List[Dict[str, Any]]:
         }
         for idx, record_ids in enumerate(sorted(clusters.values(), key=lambda values: (-len(values), sorted(values))))
     ]
+    cluster_membership = {}
+    for cluster in cluster_rows:
+        for record_id in cluster["record_ids"]:
+            cluster_membership[record_id] = cluster["cluster_id"]
+    return cluster_rows, cluster_membership
+
+
+def build_duplicate_clusters(pairs_df: pd.DataFrame) -> List[Dict[str, Any]]:
+    clusters, _ = _compute_clusters_and_membership(pairs_df)
+    return clusters
 
 
 def summarize_duplicate_clusters(
@@ -273,12 +285,14 @@ def summarize_duplicate_clusters(
     display_attributes: Sequence[str],
     top_k: int = 5,
 ) -> Dict[str, Any]:
-    clusters = build_duplicate_clusters(pairs_df)
+    clusters, _ = _compute_clusters_and_membership(pairs_df)
     if not clusters:
         return {
             "total_cluster_count": 0,
             "average_cluster_size": 0.0,
             "largest_cluster_size": 0,
+            "two_record_cluster_count": 0,
+            "three_plus_record_cluster_count": 0,
             "top_clusters": [],
         }
 
@@ -357,7 +371,327 @@ def summarize_duplicate_clusters(
         "total_cluster_count": int(len(clusters)),
         "average_cluster_size": float(np.mean(cluster_sizes)) if cluster_sizes else 0.0,
         "largest_cluster_size": int(max(cluster_sizes)) if cluster_sizes else 0,
+        "two_record_cluster_count": int(sum(1 for size in cluster_sizes if size == 2)),
+        "three_plus_record_cluster_count": int(sum(1 for size in cluster_sizes if size >= 3)),
         "top_clusters": enriched_clusters[:top_k],
+    }
+
+
+def _safe_value(record: Dict[str, Any], attribute: str) -> str:
+    return str(record.get(attribute, "")).strip()
+
+
+def _pair_signals(record1: Dict[str, Any], record2: Dict[str, Any]) -> List[str]:
+    same_first = _safe_value(record1, "first_name") and _safe_value(record1, "first_name") == _safe_value(record2, "first_name")
+    same_last = _safe_value(record1, "last_name") and _safe_value(record1, "last_name") == _safe_value(record2, "last_name")
+    same_age = _safe_value(record1, "age") and _safe_value(record1, "age") == _safe_value(record2, "age")
+    same_sex = _safe_value(record1, "sex") and _safe_value(record1, "sex") == _safe_value(record2, "sex")
+    same_house = _safe_value(record1, "house_num") and _safe_value(record1, "house_num") == _safe_value(record2, "house_num")
+    same_street = _safe_value(record1, "street_name") and _safe_value(record1, "street_name") == _safe_value(record2, "street_name")
+    same_zip = _safe_value(record1, "zip_code") and _safe_value(record1, "zip_code") == _safe_value(record2, "zip_code")
+    same_address = same_house and same_street
+
+    signals = []
+    if same_first and same_last:
+        signals.append("same full name")
+    elif same_last:
+        signals.append("same last name")
+    elif same_first:
+        signals.append("same first name")
+
+    if same_address:
+        signals.append("same street address")
+    elif any(
+        _safe_value(record1, key) != _safe_value(record2, key)
+        for key in ["house_num", "street_name"]
+        if _safe_value(record1, key) or _safe_value(record2, key)
+    ):
+        signals.append("address differs")
+
+    if same_zip:
+        signals.append("same ZIP")
+    elif _safe_value(record1, "zip_code") and _safe_value(record2, "zip_code"):
+        signals.append("ZIP differs")
+
+    if same_age:
+        signals.append("same age")
+    elif _safe_value(record1, "age") and _safe_value(record2, "age"):
+        signals.append("age differs")
+
+    if not same_sex and _safe_value(record1, "sex") and _safe_value(record2, "sex"):
+        signals.append("sex differs")
+
+    return signals[:5]
+
+
+def _build_pair_payload(
+    id1: str,
+    id2: str,
+    score: float,
+    data_lookup: Dict[str, Dict[str, Any]],
+    display_attributes: Sequence[str],
+    cluster_id: Optional[str] = None,
+    comparison_score: Optional[float] = None,
+    comparison_model_name: Optional[str] = None,
+    comparison_prediction: Optional[bool] = None,
+) -> Dict[str, Any]:
+    record1 = {"id": str(id1), **data_lookup[str(id1)]}
+    record2 = {"id": str(id2), **data_lookup[str(id2)]}
+    payload = {
+        "id1": str(id1),
+        "id2": str(id2),
+        "score": float(score),
+        "cluster_id": cluster_id,
+        "record1": _record_excerpt(record1, display_attributes),
+        "record2": _record_excerpt(record2, display_attributes),
+        "signals": _pair_signals(record1, record2),
+    }
+    if comparison_score is not None:
+        payload["comparison_score"] = float(comparison_score)
+    if comparison_model_name is not None:
+        payload["comparison_model_name"] = comparison_model_name
+    if comparison_prediction is not None:
+        payload["comparison_prediction"] = bool(comparison_prediction)
+    return payload
+
+
+def _select_display_rows(
+    results_df: pd.DataFrame,
+    limit: int,
+    ascending: bool = False,
+    cluster_membership: Optional[Dict[str, str]] = None,
+) -> pd.DataFrame:
+    if results_df.empty or limit <= 0:
+        return results_df.iloc[0:0].copy()
+
+    sorted_df = results_df.sort_values(["score", "id1", "id2"], ascending=[ascending, True, True]).copy()
+    if not cluster_membership:
+        return sorted_df.head(limit).copy()
+
+    selected_rows = []
+    selected_clusters = set()
+
+    for row in sorted_df.itertuples(index=False):
+        cluster_id = cluster_membership.get(str(row.id1)) or cluster_membership.get(str(row.id2))
+        if cluster_id and cluster_id in selected_clusters:
+            continue
+        selected_rows.append({"id1": str(row.id1), "id2": str(row.id2)})
+        if cluster_id:
+            selected_clusters.add(cluster_id)
+        if len(selected_rows) >= limit:
+            break
+
+    if len(selected_rows) < limit:
+        already_selected = {(row["id1"], row["id2"]) for row in selected_rows}
+        for row in sorted_df.itertuples(index=False):
+            key = (str(row.id1), str(row.id2))
+            if key in already_selected:
+                continue
+            selected_rows.append({"id1": key[0], "id2": key[1]})
+            if len(selected_rows) >= limit:
+                break
+
+    selected_keys = {(row["id1"], row["id2"]) for row in selected_rows}
+    selected_df = sorted_df[
+        sorted_df.apply(lambda row: (str(row["id1"]), str(row["id2"])) in selected_keys, axis=1)
+    ].copy()
+    selected_df["__rank"] = selected_df.apply(
+        lambda row: next(
+            idx
+            for idx, candidate in enumerate(selected_rows)
+            if candidate["id1"] == str(row["id1"]) and candidate["id2"] == str(row["id2"])
+        ),
+        axis=1,
+    )
+    selected_df = selected_df.sort_values("__rank").drop(columns="__rank")
+    return selected_df
+
+
+def _rows_to_pair_payloads(
+    rows_df: pd.DataFrame,
+    data_lookup: Dict[str, Dict[str, Any]],
+    display_attributes: Sequence[str],
+    cluster_membership: Optional[Dict[str, str]] = None,
+    comparison_model_name: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    payloads = []
+    for row in rows_df.itertuples(index=False):
+        cluster_id = None
+        if cluster_membership:
+            cluster_id = cluster_membership.get(str(row.id1)) or cluster_membership.get(str(row.id2))
+        payloads.append(
+            _build_pair_payload(
+                id1=str(row.id1),
+                id2=str(row.id2),
+                score=float(row.score),
+                data_lookup=data_lookup,
+                display_attributes=display_attributes,
+                cluster_id=cluster_id,
+                comparison_score=getattr(row, "comparison_score", None),
+                comparison_model_name=comparison_model_name,
+                comparison_prediction=getattr(row, "comparison_is_duplicate", None),
+            )
+        )
+    return payloads
+
+
+def summarize_duplicate_patterns(
+    duplicate_df: pd.DataFrame,
+    data_lookup: Dict[str, Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    if duplicate_df.empty:
+        return []
+
+    pattern_counts = {
+        "Same full name": 0,
+        "Same full name, different address": 0,
+        "Same household, different name": 0,
+        "Same ZIP, different address": 0,
+        "Same age, different last name": 0,
+        "Same last name + ZIP, different first name": 0,
+    }
+
+    for row in duplicate_df.itertuples(index=False):
+        record1 = data_lookup[str(row.id1)]
+        record2 = data_lookup[str(row.id2)]
+
+        same_first = _safe_value(record1, "first_name") == _safe_value(record2, "first_name")
+        same_last = _safe_value(record1, "last_name") == _safe_value(record2, "last_name")
+        same_name = same_first and same_last and (_safe_value(record1, "first_name") or _safe_value(record1, "last_name"))
+        same_age = _safe_value(record1, "age") and _safe_value(record1, "age") == _safe_value(record2, "age")
+        same_household = (
+            _safe_value(record1, "house_num")
+            and _safe_value(record1, "house_num") == _safe_value(record2, "house_num")
+            and _safe_value(record1, "street_name")
+            and _safe_value(record1, "street_name") == _safe_value(record2, "street_name")
+        )
+        same_zip = _safe_value(record1, "zip_code") and _safe_value(record1, "zip_code") == _safe_value(record2, "zip_code")
+        address_diff = any(
+            _safe_value(record1, key) != _safe_value(record2, key)
+            for key in ["house_num", "street_name", "zip_code"]
+            if _safe_value(record1, key) or _safe_value(record2, key)
+        )
+
+        if same_name:
+            pattern_counts["Same full name"] += 1
+        if same_name and address_diff:
+            pattern_counts["Same full name, different address"] += 1
+        if same_household and not same_name:
+            pattern_counts["Same household, different name"] += 1
+        if same_zip and address_diff:
+            pattern_counts["Same ZIP, different address"] += 1
+        if same_age and _safe_value(record1, "last_name") != _safe_value(record2, "last_name"):
+            pattern_counts["Same age, different last name"] += 1
+        if (
+            _safe_value(record1, "last_name")
+            and _safe_value(record1, "last_name") == _safe_value(record2, "last_name")
+            and same_zip
+            and _safe_value(record1, "first_name") != _safe_value(record2, "first_name")
+        ):
+            pattern_counts["Same last name + ZIP, different first name"] += 1
+
+    total = len(duplicate_df)
+    rows = [
+        {
+            "label": label,
+            "count": int(count),
+            "share": float(count / total) if total else 0.0,
+        }
+        for label, count in pattern_counts.items()
+        if count > 0
+    ]
+    rows.sort(key=lambda row: (-row["count"], row["label"]))
+    return rows
+
+
+def compute_score_summary(results_df: pd.DataFrame) -> Dict[str, Any]:
+    duplicate_scores = results_df.loc[results_df["is_duplicate"], "score"].astype(float)
+    rejected_scores = results_df.loc[~results_df["is_duplicate"], "score"].astype(float)
+    acceptance_rate = float(len(duplicate_scores) / len(results_df)) if len(results_df) else 0.0
+
+    def _summary(values: pd.Series) -> Dict[str, Optional[float]]:
+        if values.empty:
+            return {"max": None, "median": None, "min": None}
+        return {
+            "max": float(values.max()),
+            "median": float(values.median()),
+            "min": float(values.min()),
+        }
+
+    return {
+        "acceptance_rate": acceptance_rate,
+        "duplicates": _summary(duplicate_scores),
+        "rejected": _summary(rejected_scores),
+    }
+
+
+def _score_candidate_pairs_with_model(
+    model: Any,
+    candidates_df: pd.DataFrame,
+    data_lookup: Dict[str, Dict[str, Any]],
+) -> np.ndarray:
+    if isinstance(model, TfidfScorer):
+        return model.score_existing_pairs(candidates_df)
+
+    left_records = [{"id": str(record_id), **data_lookup[str(record_id)]} for record_id in candidates_df["id1"].astype(str)]
+    right_records = [{"id": str(record_id), **data_lookup[str(record_id)]} for record_id in candidates_df["id2"].astype(str)]
+    return model.score_pairs(left_records, right_records)
+
+
+def summarize_model_disagreements(
+    candidate_results_df: pd.DataFrame,
+    comparison_scores: np.ndarray,
+    comparison_threshold: float,
+    comparison_model_name: str,
+    data_lookup: Dict[str, Dict[str, Any]],
+    display_attributes: Sequence[str],
+    top_k: int,
+) -> Dict[str, Any]:
+    if candidate_results_df.empty:
+        return {
+            "available": True,
+            "comparison_model_name": comparison_model_name,
+            "comparison_threshold": comparison_threshold,
+            "agreement_rate": 1.0,
+            "selected_only_duplicate_count": 0,
+            "comparison_only_duplicate_count": 0,
+            "selected_only_duplicates": [],
+            "comparison_only_duplicates": [],
+        }
+
+    comparison_df = candidate_results_df.copy()
+    comparison_df["comparison_score"] = comparison_scores.astype(float)
+    comparison_df["comparison_is_duplicate"] = comparison_df["comparison_score"] >= float(comparison_threshold)
+
+    agreement_rate = float(
+        (comparison_df["is_duplicate"].astype(bool) == comparison_df["comparison_is_duplicate"].astype(bool)).mean()
+    )
+    selected_only_df = comparison_df.loc[
+        comparison_df["is_duplicate"].astype(bool) & ~comparison_df["comparison_is_duplicate"].astype(bool)
+    ].copy().sort_values("score", ascending=False)
+    comparison_only_df = comparison_df.loc[
+        ~comparison_df["is_duplicate"].astype(bool) & comparison_df["comparison_is_duplicate"].astype(bool)
+    ].copy().sort_values("comparison_score", ascending=False)
+
+    return {
+        "available": True,
+        "comparison_model_name": comparison_model_name,
+        "comparison_threshold": float(comparison_threshold),
+        "agreement_rate": agreement_rate,
+        "selected_only_duplicate_count": int(len(selected_only_df)),
+        "comparison_only_duplicate_count": int(len(comparison_only_df)),
+        "selected_only_duplicates": _rows_to_pair_payloads(
+            selected_only_df.head(top_k),
+            data_lookup=data_lookup,
+            display_attributes=display_attributes,
+            comparison_model_name=comparison_model_name,
+        ),
+        "comparison_only_duplicates": _rows_to_pair_payloads(
+            comparison_only_df.head(top_k),
+            data_lookup=data_lookup,
+            display_attributes=display_attributes,
+            comparison_model_name=comparison_model_name,
+        ),
     }
 
 
@@ -609,6 +943,14 @@ class DuplicateDetectionService:
     def _resolve_threshold(self, model: Any, threshold_override: Optional[float]) -> float:
         return float(model.threshold if threshold_override is None else threshold_override)
 
+    def _choose_comparison_model_name(self, selected_model_name: str) -> Optional[str]:
+        if selected_model_name != "tfidf" and "tfidf" in self.models:
+            return "tfidf"
+        if selected_model_name != "siamese_bilstm" and "siamese_bilstm" in self.models:
+            return "siamese_bilstm"
+        available_names = [name for name in self.models if name != selected_model_name]
+        return available_names[0] if available_names else None
+
     def find_duplicates(
         self,
         model_name: str = "siamese_bilstm",
@@ -632,18 +974,14 @@ class DuplicateDetectionService:
         )
 
         lookup = runtime_dataset.lookup
-        if isinstance(model, TfidfScorer):
-            scores = model.score_existing_pairs(candidates_df)
-        else:
-            left_records = [{"id": str(record_id), **lookup[str(record_id)]} for record_id in candidates_df["id1"].astype(str)]
-            right_records = [{"id": str(record_id), **lookup[str(record_id)]} for record_id in candidates_df["id2"].astype(str)]
-            scores = model.score_pairs(left_records, right_records)
+        scores = _score_candidate_pairs_with_model(model, candidates_df, lookup)
 
         results_df = candidates_df.copy()
         results_df["score"] = scores
         results_df["is_duplicate"] = results_df["score"] >= threshold_value
         duplicate_df = results_df.loc[results_df["is_duplicate"]].copy().sort_values("score", ascending=False)
-        top_df = duplicate_df.head(top_k)
+        rejected_df = results_df.loc[~results_df["is_duplicate"]].copy().sort_values("score", ascending=False)
+        _, cluster_membership = _compute_clusters_and_membership(duplicate_df[["id1", "id2"]])
         cluster_summary = summarize_duplicate_clusters(
             duplicate_df[["id1", "id2"]],
             data_lookup=lookup,
@@ -651,16 +989,74 @@ class DuplicateDetectionService:
             top_k=5,
         )
 
-        duplicate_pairs = [
-            {
-                "id1": str(row.id1),
-                "id2": str(row.id2),
-                "score": float(row.score),
-                "record1": _record_excerpt({"id": str(row.id1), **lookup[str(row.id1)]}, model.attributes),
-                "record2": _record_excerpt({"id": str(row.id2), **lookup[str(row.id2)]}, model.attributes),
+        high_confidence_df = _select_display_rows(
+            duplicate_df,
+            limit=top_k,
+            ascending=False,
+            cluster_membership=cluster_membership,
+        )
+        borderline_df = _select_display_rows(
+            duplicate_df,
+            limit=top_k,
+            ascending=True,
+            cluster_membership=cluster_membership,
+        )
+        near_miss_df = rejected_df.head(top_k).copy()
+
+        display_attributes = model.attributes
+        high_confidence_duplicates = _rows_to_pair_payloads(
+            high_confidence_df,
+            data_lookup=lookup,
+            display_attributes=display_attributes,
+            cluster_membership=cluster_membership,
+        )
+        borderline_duplicates = _rows_to_pair_payloads(
+            borderline_df,
+            data_lookup=lookup,
+            display_attributes=display_attributes,
+            cluster_membership=cluster_membership,
+        )
+        near_miss_non_duplicates = _rows_to_pair_payloads(
+            near_miss_df,
+            data_lookup=lookup,
+            display_attributes=display_attributes,
+        )
+
+        representative_cases = {
+            "highest_confidence_duplicate": high_confidence_duplicates[0] if high_confidence_duplicates else None,
+            "most_borderline_duplicate": borderline_duplicates[0] if borderline_duplicates else None,
+            "closest_rejected_pair": near_miss_non_duplicates[0] if near_miss_non_duplicates else None,
+            "largest_cluster": cluster_summary["top_clusters"][0] if cluster_summary["top_clusters"] else None,
+        }
+
+        disagreement_analysis: Dict[str, Any]
+        comparison_model_name = self._choose_comparison_model_name(model_name)
+        comparison_candidate_limit = 50000
+        if comparison_model_name is None:
+            disagreement_analysis = {
+                "available": False,
+                "reason": "No comparison model is configured for this deployment.",
             }
-            for row in top_df.itertuples(index=False)
-        ]
+        elif len(results_df) > comparison_candidate_limit:
+            disagreement_analysis = {
+                "available": False,
+                "reason": (
+                    f"Disagreement analysis skipped because {len(results_df)} candidate pairs exceed "
+                    f"the comparison limit of {comparison_candidate_limit}."
+                ),
+            }
+        else:
+            comparison_model = self._resolve_model(comparison_model_name)
+            comparison_scores = _score_candidate_pairs_with_model(comparison_model, candidates_df, lookup)
+            disagreement_analysis = summarize_model_disagreements(
+                candidate_results_df=results_df,
+                comparison_scores=comparison_scores,
+                comparison_threshold=float(comparison_model.threshold),
+                comparison_model_name=comparison_model_name,
+                data_lookup=lookup,
+                display_attributes=list(dict.fromkeys(model.attributes + comparison_model.attributes)),
+                top_k=min(top_k, 10),
+            )
 
         return {
             "model_name": model_name,
@@ -670,8 +1066,15 @@ class DuplicateDetectionService:
             "dataset": runtime_dataset.summary(),
             "candidate_pair_count": int(len(results_df)),
             "predicted_duplicate_pair_count": int(len(duplicate_df)),
-            "duplicate_pairs": duplicate_pairs,
+            "duplicate_pairs": high_confidence_duplicates,
+            "high_confidence_duplicates": high_confidence_duplicates,
+            "borderline_duplicates": borderline_duplicates,
+            "near_miss_non_duplicates": near_miss_non_duplicates,
+            "score_summary": compute_score_summary(results_df),
             "duplicate_cluster_summary": cluster_summary,
+            "duplicate_pattern_summary": summarize_duplicate_patterns(duplicate_df, lookup),
+            "representative_cases": representative_cases,
+            "disagreement_analysis": disagreement_analysis,
         }
 
     def check_entry(

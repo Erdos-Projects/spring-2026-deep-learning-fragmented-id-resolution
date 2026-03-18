@@ -11,7 +11,7 @@ from src.deployment import DuplicateDetectionService
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 TFIDF_CONFIG_PATH = REPO_ROOT / "models/comparisons/apples_to_apples_with_charcnn/tfidf/blocked_pipeline/extended/baseline_metrics.json"
-SIAMESE_MODEL_PATH = REPO_ROOT / "models/comparisons/apples_to_apples_with_charcnn/siamese_bilstm/blocked_pipeline/extended/best_model.pth"
+SIAMESE_MODEL_PATH = REPO_ROOT / "models/experiments/hard_weight_tuning_bilstm_blended/both_pos0.50_neg0.25_blended_score/best_model.pth"
 
 
 def _sample_runtime_frame():
@@ -132,8 +132,15 @@ def test_api_upload_find_and_check_entry_with_tfidf():
         payload = find_response.json()
         assert payload["candidate_pair_count"] >= 1
         assert payload["predicted_duplicate_pair_count"] >= 1
+        assert "high_confidence_duplicates" in payload
+        assert "borderline_duplicates" in payload
+        assert "near_miss_non_duplicates" in payload
+        assert "duplicate_cluster_summary" in payload
+        assert "duplicate_pattern_summary" in payload
+        assert "representative_cases" in payload
+        assert "disagreement_analysis" in payload
         assert any(
-            {pair["id1"], pair["id2"]} == {"r1", "r2"} for pair in payload["duplicate_pairs"]
+            {pair["id1"], pair["id2"]} == {"r1", "r2"} for pair in payload["high_confidence_duplicates"]
         )
 
         entry_response = client.post(

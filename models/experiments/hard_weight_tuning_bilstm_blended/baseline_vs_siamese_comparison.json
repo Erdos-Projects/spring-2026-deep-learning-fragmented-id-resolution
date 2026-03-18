@@ -1,0 +1,35 @@
+[
+  {
+    "model": "baseline_tfidf",
+    "test_f1": 0.9629629629629629,
+    "test_pr_auc": 0.994481253568162,
+    "test_precision": 0.9692982456140351,
+    "test_recall": 0.9567099567099567,
+    "hard_subset_f1": 0.8793103448275862,
+    "easy_subset_f1": 0.9912536443148688,
+    "hard_positive_recall": 0.8360655737704918,
+    "hard_negative_rejection_rate": 0.9130434782608695
+  },
+  {
+    "model": "siamese_existing",
+    "test_f1": 0.9849462365591398,
+    "test_pr_auc": 0.9993751832771669,
+    "test_precision": 0.9786324786324786,
+    "test_recall": 0.9913419913419913,
+    "hard_subset_f1": 0.967741935483871,
+    "easy_subset_f1": 0.9912023460410557,
+    "hard_positive_recall": 0.9836065573770492,
+    "hard_negative_rejection_rate": 0.9347826086956522
+  },
+  {
+    "model": "siamese_tuned_pos0.5_neg0.25_blended",
+    "test_f1": 0.9891067538126361,
+    "test_pr_auc": 0.9994317925344165,
+    "test_precision": 0.9956140350877193,
+    "test_recall": 0.9826839826839827,
+    "hard_subset_f1": 0.9833333333333333,
+    "easy_subset_f1": 0.9911504424778761,
+    "hard_positive_recall": 0.9672131147540983,
+    "hard_negative_rejection_rate": 1.0
+  }
+]

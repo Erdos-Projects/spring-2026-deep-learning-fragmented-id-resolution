@@ -55,6 +55,44 @@ def _build_tiny_dataset(tmp_path):
     return prepared_path, dpl_path, ndpl_path
 
 
+def _build_tiny_dataset_with_hard_cases(tmp_path):
+    prepared = pd.DataFrame(
+        [
+            {"id": "1", "first_name": "helen", "midl_name": "delores", "last_name": "bullock", "house_num": "700", "street_name": "bloodworth", "zip_code": "27601", "age": "65", "sex": "female", "race_desc": "black", "ethnic_desc": "n"},
+            {"id": "2", "first_name": "helen", "midl_name": "delores", "last_name": "brown bullock", "house_num": "700", "street_name": "bloodworth", "zip_code": "27601", "age": "65", "sex": "female", "race_desc": "asian", "ethnic_desc": "n"},
+            {"id": "3", "first_name": "john", "midl_name": "", "last_name": "smith", "house_num": "12", "street_name": "oak", "zip_code": "11111", "age": "44", "sex": "m", "race_desc": "white", "ethnic_desc": "n"},
+            {"id": "4", "first_name": "john", "midl_name": "", "last_name": "smyth", "house_num": "12", "street_name": "oak", "zip_code": "11111", "age": "44", "sex": "m", "race_desc": "white", "ethnic_desc": "n"},
+            {"id": "5", "first_name": "amy", "midl_name": "", "last_name": "lee", "house_num": "30", "street_name": "pine", "zip_code": "22222", "age": "50", "sex": "f", "race_desc": "white", "ethnic_desc": "n"},
+            {"id": "6", "first_name": "amy", "midl_name": "", "last_name": "lee", "house_num": "31", "street_name": "pine", "zip_code": "22222", "age": "50", "sex": "f", "race_desc": "white", "ethnic_desc": "n"},
+            {"id": "7", "first_name": "maria", "midl_name": "", "last_name": "stone", "house_num": "88", "street_name": "maple", "zip_code": "27516", "age": "31", "sex": "f", "race_desc": "white", "ethnic_desc": "n"},
+            {"id": "8", "first_name": "marie", "midl_name": "", "last_name": "stone", "house_num": "88", "street_name": "maple", "zip_code": "27516", "age": "31", "sex": "f", "race_desc": "white", "ethnic_desc": "n"},
+        ]
+    )
+    dpl = pd.DataFrame(
+        [
+            {"id1": "1", "id2": "2"},
+            {"id1": "5", "id2": "6"},
+        ]
+    )
+    ndpl = pd.DataFrame(
+        [
+            {"id1": "3", "id2": "4"},
+            {"id1": "7", "id2": "8"},
+            {"id1": "1", "id2": "3"},
+            {"id1": "2", "id2": "4"},
+            {"id1": "5", "id2": "7"},
+            {"id1": "6", "id2": "8"},
+        ]
+    )
+    prepared_path = tmp_path / "prepared_hard.tsv"
+    dpl_path = tmp_path / "dpl_hard.tsv"
+    ndpl_path = tmp_path / "ndpl_hard.tsv"
+    _write_tsv(prepared, prepared_path)
+    _write_tsv(dpl, dpl_path)
+    _write_tsv(ndpl, ndpl_path)
+    return prepared_path, dpl_path, ndpl_path
+
+
 def test_smoke_train_then_evaluate(tmp_path):
     prepared_path, dpl_path, ndpl_path = _build_tiny_dataset(tmp_path)
 
@@ -250,3 +288,87 @@ def test_smoke_train_then_evaluate_charcnn(tmp_path):
     subprocess.run(eval_cmd, check=True)
 
     assert (eval_out_dir / "smoke_charcnn_test_metrics.json").exists()
+
+
+def test_smoke_train_then_evaluate_with_mined_hard_example_weighting(tmp_path):
+    prepared_path, dpl_path, ndpl_path = _build_tiny_dataset_with_hard_cases(tmp_path)
+
+    hard_dir = tmp_path / "hard_examples"
+    hard_cmd = [
+        sys.executable,
+        "src/mine_hard_examples.py",
+        "--data-path",
+        str(prepared_path),
+        "--dpl-path",
+        str(dpl_path),
+        "--ndpl-path",
+        str(ndpl_path),
+        "--output-dir",
+        str(hard_dir),
+    ]
+    subprocess.run(hard_cmd, check=True)
+
+    hard_artifact = hard_dir / "labeled_hard_examples.tsv"
+    assert hard_artifact.exists()
+
+    run_dir = tmp_path / "run_hard_weighted"
+    split_path = tmp_path / "split_hard_weighted.tsv"
+    train_cmd = [
+        sys.executable,
+        "src/train.py",
+        "--data-path",
+        str(prepared_path),
+        "--dpl-path",
+        str(dpl_path),
+        "--ndpl-path",
+        str(ndpl_path),
+        "--split-strategy",
+        "pair_random",
+        "--split-output",
+        str(split_path),
+        "--epochs",
+        "1",
+        "--batch-size",
+        "4",
+        "--run-dir",
+        str(run_dir),
+        "--hard-example-path",
+        str(hard_artifact),
+        "--hard-weighting",
+        "loss",
+        "--hard-weight-scale",
+        "1.5",
+        "--disable-progress",
+        "--seed",
+        "7",
+    ]
+    subprocess.run(train_cmd, check=True)
+
+    with open(run_dir / "best_metrics.json", "r", encoding="utf-8") as f:
+        payload = json.load(f)
+    assert payload["hard_weighting"] == "loss"
+    assert payload["test_metrics"]["hard_example_metrics"]["hard_example_count"] >= 0
+
+    eval_out_dir = tmp_path / "eval_hard_weighted"
+    eval_cmd = [
+        sys.executable,
+        "src/evaluate.py",
+        "--model-path",
+        str(run_dir / "best_model.pth"),
+        "--split-path",
+        str(split_path),
+        "--split-name",
+        "test",
+        "--hard-example-path",
+        str(hard_artifact),
+        "--output-dir",
+        str(eval_out_dir),
+        "--output-prefix",
+        "smoke_hard_weighted",
+        "--disable-progress",
+    ]
+    subprocess.run(eval_cmd, check=True)
+
+    with open(eval_out_dir / "smoke_hard_weighted_test_metrics.json", "r", encoding="utf-8") as f:
+        eval_payload = json.load(f)
+    assert "hard_example_metrics" in eval_payload["metrics"]

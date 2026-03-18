@@ -225,6 +225,70 @@ Suggested comparison:
 - Compare Precision / Recall / F1 / PR-AUC on the test split
 - Inspect hard positives and hard negatives where TF-IDF fails but Siamese succeeds
 
+## Hard-Example Mining and Weighted Siamese Training
+
+This repo now supports mining hard positives and hard negatives directly from the real labeled pair files, then using those mined examples to bias Siamese training.
+
+Why:
+
+- `DPL` already contains true positives that are unusually difficult
+- `NDPL` already contains true negatives that are unusually similar
+- weighting those real hard cases is more defensible than inventing synthetic labels first
+
+Mine hard examples:
+
+```bash
+python src/mine_hard_examples.py ^
+  --data-path data/processed/ncvoters_prepared.tsv ^
+  --dpl-path data/raw/ncvoters_DPL.tsv ^
+  --ndpl-path data/raw/ncvoters_NDPL.tsv ^
+  --output-dir data/processed/hard_examples_real ^
+  --output-prefix labeled_hard_examples_real
+```
+
+Train a hard-weighted Siamese model:
+
+```bash
+python src/train.py ^
+  --data-path data/processed/ncvoters_prepared.tsv ^
+  --dpl-path data/raw/ncvoters_DPL.tsv ^
+  --ndpl-path data/raw/ncvoters_NDPL.tsv ^
+  --split-path data/processed/splits/id_disjoint_seed42.tsv ^
+  --attribute-set extended ^
+  --blocking-keys first_name,age ^
+  --blocking-mode any ^
+  --max-len 128 ^
+  --hard-example-path data/processed/hard_examples_real/labeled_hard_examples_real.tsv ^
+  --hard-weighting both ^
+  --hard-positive-weight-scale 0.50 ^
+  --hard-negative-weight-scale 0.25 ^
+  --monitor-metric blended_score ^
+  --blended-overall-weight 0.5 ^
+  --blended-hard-positive-weight 0.25 ^
+  --blended-hard-negative-weight 0.25 ^
+  --run-dir models/experiments/hard_weight_tuning_bilstm_blended/both_pos0.50_neg0.25_blended_score
+```
+
+Run the small tuning sweep:
+
+```bash
+python src/tune_hard_weighting.py ^
+  --hard-example-path data/processed/hard_examples_real/labeled_hard_examples_real.tsv ^
+  --attribute-set extended ^
+  --blocking-keys first_name,age ^
+  --blocking-mode any ^
+  --encoder bilstm ^
+  --max-len 128 ^
+  --epochs 15 ^
+  --batch-size 64 ^
+  --lr 0.001 ^
+  --hard-weighting-modes both ^
+  --hard-positive-scales 0.25,0.5,1.0 ^
+  --hard-negative-scales 0.25,0.5,1.0 ^
+  --monitor-metric blended_score ^
+  --run-root models/experiments/hard_weight_tuning_bilstm_blended
+```
+
 ## Apples-to-Apples Comparison Matrix
 
 To compare both model families fairly across:
@@ -304,6 +368,46 @@ Blocking summary for `first_name OR age` on the same test split:
 - positive pass rate: `1.0`
 - negative pass rate: `0.03495`
 - candidate pairs: `303 / 2291`
+
+## Latest Tuned Deployment Snapshot (March 18, 2026)
+
+Hard-example mining artifact:
+
+- `data/processed/hard_examples_real/labeled_hard_examples_real.tsv`
+
+Best tuned deployment checkpoint:
+
+- `models/experiments/hard_weight_tuning_bilstm_blended/both_pos0.50_neg0.25_blended_score/best_model.pth`
+
+This tuned BiLSTM is the current default Siamese model used by the deployment app.
+
+Test-set comparison on the blocked extended-attribute setting:
+
+- TF-IDF baseline
+  - F1: `0.9630`
+  - PR-AUC: `0.9945`
+  - hard-subset F1: `0.8793`
+  - hard-positive recall: `0.8361`
+  - hard-negative rejection: `0.9130`
+- previous Siamese BiLSTM
+  - F1: `0.9849`
+  - PR-AUC: `0.9994`
+  - hard-subset F1: `0.9677`
+  - hard-positive recall: `0.9836`
+  - hard-negative rejection: `0.9348`
+- tuned Siamese BiLSTM (`hard_positive_weight_scale=0.50`, `hard_negative_weight_scale=0.25`)
+  - F1: `0.9891`
+  - PR-AUC: `0.9994`
+  - hard-subset F1: `0.9833`
+  - easy-subset F1: `0.9912`
+  - hard-positive recall: `0.9672`
+  - hard-negative rejection: `1.0000`
+
+Interpretation:
+
+- TF-IDF remains the operational non-deep benchmark.
+- The tuned Siamese model now improves both overall F1 and hard-subset F1 relative to the previous Siamese checkpoint.
+- The chosen deployment checkpoint is the best tradeoff we found between easy-case quality and difficult-case behavior.
 
 ## Tests
 

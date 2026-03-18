@@ -15,6 +15,7 @@ try:
         parse_attributes,
         set_seed,
     )
+    from .hard_examples import attach_hard_example_metadata, load_hard_example_artifact, summarize_hard_example_metrics
     from .metrics import compute_binary_metrics
     from .splits import build_splits, check_split_integrity, load_split_artifact, save_split_artifact
 except ImportError:
@@ -26,6 +27,7 @@ except ImportError:
         parse_attributes,
         set_seed,
     )
+    from hard_examples import attach_hard_example_metadata, load_hard_example_artifact, summarize_hard_example_metrics
     from metrics import compute_binary_metrics
     from splits import build_splits, check_split_integrity, load_split_artifact, save_split_artifact
 
@@ -80,6 +82,7 @@ def parse_args():
     parser.add_argument("--distance-grid-size", type=int, default=201)
 
     parser.add_argument("--run-dir", default="models/baselines/tfidf_distance")
+    parser.add_argument("--hard-example-path", default=None, help="Optional TSV from src/mine_hard_examples.py")
     return parser.parse_args()
 def serialize_record(record, attributes, tagged=False):
     tokens = []
@@ -236,6 +239,7 @@ def main():
 
     data_df = load_prepared_data(args.data_path)
     pairs_df = load_labeled_pairs(args.dpl_path, args.ndpl_path, fail_on_duplicate_pairs=True)
+    hard_example_df = load_hard_example_artifact(args.hard_example_path) if args.hard_example_path else None
     missing_rows, missing_ids = count_missing_pair_ids(pairs_df, data_df["id"].astype(str))
     if missing_rows > 0:
         print(
@@ -256,6 +260,7 @@ def main():
         split_pairs = split_df[split_df["split"] == split_name][["pair_id", "id1", "id2", "label"]].copy()
         split_pairs["id1"] = split_pairs["id1"].astype(str)
         split_pairs["id2"] = split_pairs["id2"].astype(str)
+        split_pairs = attach_hard_example_metadata(split_pairs, hard_example_df)
 
         block_mask = compute_block_mask(split_pairs, data_df, blocking_keys, args.blocking_mode)
         distances, missing_mask = compute_pair_distances(split_pairs, matrix, record_to_row)
@@ -285,6 +290,12 @@ def main():
             missing_mask=missing_mask,
             distance_threshold=current_threshold,
         )
+        results[split_name]["hard_example_metrics"] = summarize_hard_example_metrics(
+            split_pairs,
+            split_pairs["label"].astype(int).to_numpy(),
+            1.0 - distances,
+            1.0 - current_threshold,
+        )
 
     if threshold_sweep_df is not None:
         threshold_sweep_df.to_csv(run_dir / "val_distance_threshold_sweep.tsv", sep="\t", index=False)
@@ -303,6 +314,7 @@ def main():
             "vocab_size": int(len(vectorizer.vocabulary_)),
         },
         "threshold_selection": args.threshold_selection,
+        "hard_example_path": args.hard_example_path,
         "selected_distance_threshold": float(selected_distance_threshold),
         "selected_similarity_threshold": float(1.0 - selected_distance_threshold),
         "split_summary": split_summary,
@@ -320,8 +332,20 @@ def main():
     flat_metrics = []
     for split_name, payload in results.items():
         row = {"split": split_name}
-        row.update({k: v for k, v in payload.items() if k not in {"confusion_matrix", "blocking"}})
+        row.update({k: v for k, v in payload.items() if k not in {"confusion_matrix", "blocking", "hard_example_metrics"}})
         row.update(payload["blocking"])
+        hard_payload = payload.get("hard_example_metrics", {})
+        row.update(
+            {
+                "hard_example_count": hard_payload.get("hard_example_count", 0),
+                "hard_positive_count": hard_payload.get("hard_positive_count", 0),
+                "hard_negative_count": hard_payload.get("hard_negative_count", 0),
+                "hard_positive_recall": hard_payload.get("hard_positive_recall", float("nan")),
+                "hard_negative_rejection_rate": hard_payload.get("hard_negative_rejection_rate", float("nan")),
+                "hard_subset_f1": hard_payload.get("hard_subset_metrics", {}).get("f1", float("nan")),
+                "easy_subset_f1": hard_payload.get("easy_subset_metrics", {}).get("f1", float("nan")),
+            }
+        )
         row.update(
             {
                 "tn": payload["confusion_matrix"]["tn"],
