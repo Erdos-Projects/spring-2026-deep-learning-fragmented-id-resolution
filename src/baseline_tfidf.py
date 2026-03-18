@@ -9,6 +9,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 try:
     from .blocking import compute_block_mask, parse_blocking_keys, summarize_blocking
     from .data_utils import (
+        ATTRIBUTE_SET_NAMES,
         count_missing_pair_ids,
         load_labeled_pairs,
         load_prepared_data,
@@ -21,6 +22,7 @@ try:
 except ImportError:
     from blocking import compute_block_mask, parse_blocking_keys, summarize_blocking
     from data_utils import (
+        ATTRIBUTE_SET_NAMES,
         count_missing_pair_ids,
         load_labeled_pairs,
         load_prepared_data,
@@ -50,7 +52,7 @@ def parse_args():
     parser.add_argument("--test-frac", type=float, default=0.15)
     parser.add_argument("--seed", type=int, default=42)
 
-    parser.add_argument("--attribute-set", choices=["baseline", "extended"], default="baseline")
+    parser.add_argument("--attribute-set", choices=ATTRIBUTE_SET_NAMES, default="baseline")
     parser.add_argument("--attributes-csv", default=None, help="Comma-separated list. Overrides --attribute-set.")
     parser.add_argument(
         "--tagged-serialization",

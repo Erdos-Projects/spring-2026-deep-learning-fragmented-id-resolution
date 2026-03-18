@@ -276,3 +276,52 @@ This makes the product demo reflect the current best validated tradeoff between 
 1. improve deployment calibration and threshold selection for review-vs-auto-merge operating points
 2. analyze disagreement cases between TF-IDF, tuned BiLSTM, and CharCNN to identify systematic failure modes
 3. test whether adding or down-weighting volatile fields improves robustness on surname changes and demographic conflicts
+
+## 15. Middle-Name and Sex-Aware Pair-Feature Follow-Up
+
+Review cases from the deployment UI exposed a specific failure mode: some true duplicates shared the same first name, last name, address, ZIP, age, and sex, but differed in surname expansion or middle-name presentation. Examples included cases like:
+
+- `emma yarbaugh` vs `emma perkins yarbaugh`
+- `yajaira diaz` vs `yajaira diaz kumar`
+- `alejandro garcia` vs `alejandro paniagua garcia`
+
+To probe that failure mode without hard-coding deterministic business rules, we tested two additions:
+
+1. `extended_midl`
+   - keep `race_desc` and `ethnic_desc`
+   - add `midl_name` to the serialized record encoder input
+2. `sex_aware_name`
+   - add explicit pair features such as:
+     - same middle name
+     - both male / both female
+     - male same-first-name with different last names
+     - female same-first-name with different last names
+     - the same patterns conditioned on same age
+
+Artifacts:
+
+- `models/experiments/extended_midl_bilstm_blended/best_metrics.json`
+- `models/experiments/extended_midl_sex_aware_bilstm_blended/best_metrics.json`
+
+Results on the same blocked hard-weighted setting:
+
+- current tuned deployment BiLSTM
+  - F1: `0.9891`
+  - hard-subset F1: `0.9833`
+  - hard-negative rejection: `1.0000`
+- `extended_midl`
+  - F1: `0.9847`
+  - hard-subset F1: `0.9756`
+  - hard-negative rejection: `0.9565`
+- `extended_midl + sex_aware_name`
+  - F1: `0.9892`
+  - hard-subset F1: `0.9677`
+  - hard-negative rejection: `0.9348`
+
+Interpretation:
+
+- adding `midl_name` clearly helps some surname-expansion duplicate cases
+- the sex-aware pair features also suppress some suspicious same-first-name male collisions
+- however, the new feature set currently gives up too much hard-negative protection to replace the existing deployment checkpoint
+
+So the follow-up is promising, but it is not yet the new deployment default.

@@ -6,6 +6,11 @@ from pathlib import Path
 
 import pandas as pd
 
+try:
+    from .data_utils import ATTRIBUTE_SET_NAMES
+except ImportError:
+    from data_utils import ATTRIBUTE_SET_NAMES
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Run baseline vs extended attribute ablation.")
@@ -25,7 +30,37 @@ def parse_args():
     parser.add_argument("--cnn-channels", type=int, default=64)
     parser.add_argument("--cnn-kernel-sizes", default="3,4,5")
     parser.add_argument("--classifier-hidden-dim", type=int, default=64)
-    parser.add_argument("--monitor-metric", choices=["f1", "pr_auc", "recall", "precision", "accuracy"], default="pr_auc")
+    parser.add_argument("--pair-feature-set", choices=["none", "sex_aware_name"], default="none")
+    parser.add_argument(
+        "--monitor-metric",
+        choices=[
+            "f1",
+            "pr_auc",
+            "recall",
+            "precision",
+            "accuracy",
+            "hard_subset_f1",
+            "hard_positive_recall",
+            "hard_negative_rejection_rate",
+            "blended_score",
+        ],
+        default="pr_auc",
+    )
+    parser.add_argument(
+        "--attribute-sets",
+        default="baseline,extended",
+        help=f"Comma-separated attribute presets to compare. Available: {', '.join(ATTRIBUTE_SET_NAMES)}",
+    )
+    parser.add_argument("--blocking-keys", default="none")
+    parser.add_argument("--blocking-mode", choices=["all", "any"], default="any")
+    parser.add_argument("--hard-example-path", default=None)
+    parser.add_argument("--hard-weighting", choices=["none", "loss", "sampler", "both"], default="none")
+    parser.add_argument("--hard-weight-scale", type=float, default=1.0)
+    parser.add_argument("--hard-positive-weight-scale", type=float, default=None)
+    parser.add_argument("--hard-negative-weight-scale", type=float, default=None)
+    parser.add_argument("--blended-overall-weight", type=float, default=0.5)
+    parser.add_argument("--blended-hard-positive-weight", type=float, default=0.25)
+    parser.add_argument("--blended-hard-negative-weight", type=float, default=0.25)
     parser.add_argument("--run-root", default="models/runs/ablations")
     parser.add_argument("--disable-progress", action="store_true")
     return parser.parse_args()
@@ -65,15 +100,33 @@ def run_single(attribute_set, args, run_dir):
         args.cnn_kernel_sizes,
         "--classifier-hidden-dim",
         str(args.classifier_hidden_dim),
+        "--pair-feature-set",
+        args.pair_feature_set,
         "--attribute-set",
         attribute_set,
         "--monitor-metric",
         args.monitor_metric,
+        "--blocking-keys",
+        args.blocking_keys,
+        "--blocking-mode",
+        args.blocking_mode,
         "--run-dir",
         str(run_dir),
     ]
     if args.split_path:
         cmd.extend(["--split-path", args.split_path])
+    if args.hard_example_path:
+        cmd.extend(["--hard-example-path", args.hard_example_path])
+    if args.hard_weighting != "none":
+        cmd.extend(["--hard-weighting", args.hard_weighting])
+        cmd.extend(["--hard-weight-scale", str(args.hard_weight_scale)])
+    if args.hard_positive_weight_scale is not None:
+        cmd.extend(["--hard-positive-weight-scale", str(args.hard_positive_weight_scale)])
+    if args.hard_negative_weight_scale is not None:
+        cmd.extend(["--hard-negative-weight-scale", str(args.hard_negative_weight_scale)])
+    cmd.extend(["--blended-overall-weight", str(args.blended_overall_weight)])
+    cmd.extend(["--blended-hard-positive-weight", str(args.blended_hard_positive_weight)])
+    cmd.extend(["--blended-hard-negative-weight", str(args.blended_hard_negative_weight)])
     if args.disable_progress:
         cmd.append("--disable-progress")
     subprocess.run(cmd, check=True)
@@ -83,9 +136,15 @@ def main():
     args = parse_args()
     run_root = Path(args.run_root)
     run_root.mkdir(parents=True, exist_ok=True)
+    attribute_sets = [item.strip() for item in str(args.attribute_sets).split(",") if item.strip()]
+    invalid_sets = [item for item in attribute_sets if item not in ATTRIBUTE_SET_NAMES]
+    if invalid_sets:
+        raise ValueError(
+            f"Unknown attribute set(s): {', '.join(invalid_sets)}. Available: {', '.join(ATTRIBUTE_SET_NAMES)}"
+        )
 
     rows = []
-    for attribute_set in ["baseline", "extended"]:
+    for attribute_set in attribute_sets:
         run_dir = run_root / attribute_set
         run_single(attribute_set, args, run_dir)
 

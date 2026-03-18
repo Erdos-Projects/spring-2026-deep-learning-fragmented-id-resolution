@@ -444,6 +444,45 @@ Interpretation:
 - CharCNN can push the mined hard subset slightly higher in one setting, but it gives up too much overall and easy-case quality.
 - The chosen BiLSTM deployment checkpoint is still the best tradeoff we found between easy-case quality and difficult-case behavior.
 
+## Middle-Name and Sex-Aware Follow-Up (March 18, 2026)
+
+We also tested a follow-up feature expansion motivated by review cases in the deployment UI:
+
+- `extended_midl`
+  - adds `midl_name` while keeping `race_desc` and `ethnic_desc`
+- `sex_aware_name`
+  - adds structured pair features such as:
+    - same middle name
+    - both male / both female
+    - male same-first-name but different-last-name
+    - female same-first-name but different-last-name
+
+Artifacts:
+
+- `models/experiments/extended_midl_bilstm_blended/best_metrics.json`
+- `models/experiments/extended_midl_sex_aware_bilstm_blended/best_metrics.json`
+
+Results:
+
+- current deployed tuned BiLSTM
+  - F1: `0.9891`
+  - hard-subset F1: `0.9833`
+  - hard-negative rejection: `1.0000`
+- `extended_midl`
+  - F1: `0.9847`
+  - hard-subset F1: `0.9756`
+  - hard-negative rejection: `0.9565`
+- `extended_midl + sex_aware_name`
+  - F1: `0.9892`
+  - hard-subset F1: `0.9677`
+  - hard-negative rejection: `0.9348`
+
+Interpretation:
+
+- `midl_name` and the sex-aware pair features fix several obvious duplicate false negatives involving surname expansion.
+- The sex-aware model also suppresses some suspicious same-first-name male collisions.
+- But the current tuned deployment checkpoint still has the better hard-negative safety margin, so it remains the default deployment model for now.
+
 ## Tests
 
 ```bash
@@ -466,6 +505,12 @@ Supported flows:
 
 1. Upload a CSV/TSV dataset and find likely duplicates inside it.
 2. Load a dataset once and check a new incoming record against it.
+
+The user-facing app also includes model-review tooling:
+
+- disagreement sections are labeled as `Review recommended`
+- disagreement cards show exact matching fields and exact differing fields
+- record previews include `midl_name` when present so surname-expansion and middle-name cases are visible in the UI
 
 Start the API:
 

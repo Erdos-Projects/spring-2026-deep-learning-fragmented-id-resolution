@@ -1,0 +1,5 @@
+attribute_set	best_epoch	best_monitor_value	best_val_f1	best_val_pr_auc	test_f1	test_pr_auc	test_roc_auc	checkpoint
+extended_no_demo	9	0.9999550763701707	0.995260663507109	0.9999101527403413	0.9781659388646288	0.9981697801343716	0.9997751439499012	models\experiments\attribute_ablation_weighted_bilstm_blended\extended_no_demo\best_model.pth
+extended_no_demo_midl	8	0.9998554056252722	0.9928057553956835	0.9997108112505444	0.9846153846153847	0.9996342119717627	0.9999579708317572	models\experiments\attribute_ablation_weighted_bilstm_blended\extended_no_demo_midl\best_model.pth
+extended	10	0.9998523773696097	0.9952380952380953	0.9997047547392195	0.9891067538126361	0.9994317925344165	0.9999348547892237	models\experiments\attribute_ablation_weighted_bilstm_blended\extended\best_model.pth
+baseline	6	0.9427390417676403	0.9765258215962441	0.9917642704666289	0.9515789473684211	0.9846263393042247	0.9985331820283276	models\experiments\attribute_ablation_weighted_bilstm_blended\baseline\best_model.pth

@@ -7,6 +7,11 @@ from pathlib import Path
 
 import pandas as pd
 
+try:
+    from .data_utils import ATTRIBUTE_SET_NAMES
+except ImportError:
+    from data_utils import ATTRIBUTE_SET_NAMES
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Sweep hard-example weighting settings for Siamese training.")
@@ -15,7 +20,7 @@ def parse_args():
     parser.add_argument("--ndpl-path", default="data/raw/ncvoters_NDPL.tsv")
     parser.add_argument("--split-path", default="data/processed/splits/id_disjoint_seed42.tsv")
     parser.add_argument("--hard-example-path", required=True)
-    parser.add_argument("--attribute-set", choices=["baseline", "extended"], default="extended")
+    parser.add_argument("--attribute-set", choices=ATTRIBUTE_SET_NAMES, default="extended")
     parser.add_argument("--blocking-keys", default="first_name,age")
     parser.add_argument("--blocking-mode", choices=["all", "any"], default="any")
     parser.add_argument("--encoder", choices=["bilstm", "charcnn"], default="bilstm")
