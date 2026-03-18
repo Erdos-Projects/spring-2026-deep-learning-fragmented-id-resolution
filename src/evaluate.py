@@ -64,10 +64,16 @@ def run_inference(model, loader, device, disable_progress=False):
     probs_all = []
     labels_all = []
     with torch.no_grad():
-        for x1, x2, labels in tqdm(loader, desc="Inference", disable=disable_progress):
+        for batch in tqdm(loader, desc="Inference", disable=disable_progress):
+            if len(batch) == 4:
+                x1, x2, labels, pair_features = batch
+                pair_features = pair_features.to(device).float()
+            else:
+                x1, x2, labels = batch
+                pair_features = None
             x1 = x1.to(device)
             x2 = x2.to(device)
-            logits = model(x1, x2).squeeze(-1)
+            logits = model(x1, x2, pair_features=pair_features).squeeze(-1)
             probs = torch.sigmoid(logits).cpu().numpy()
             probs_all.append(probs)
             labels_all.append(labels.numpy())
@@ -134,6 +140,7 @@ def main():
         attributes=list(config["attributes"]),
         strict_missing_ids=False,
         drop_missing_ids=True,
+        pair_feature_set=config.get("pair_feature_set", "none"),
     )
     loader = None
     if len(dataset) > 0:
@@ -147,6 +154,7 @@ def main():
         cnn_channels=int(config.get("cnn_channels", config.get("hidden_dim", 64))),
         cnn_kernel_sizes=config.get("cnn_kernel_sizes", [3, 4, 5]),
         classifier_hidden_dim=int(config.get("classifier_hidden_dim", 64)),
+        pair_feature_dim=int(config.get("pair_feature_dim", 0)),
     ).to(device)
     model.load_state_dict(checkpoint["model_state_dict"])
 

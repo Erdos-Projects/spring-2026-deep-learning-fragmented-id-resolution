@@ -10,6 +10,93 @@ except ImportError:
     from data_utils import DEFAULT_BASELINE_ATTRIBUTES, load_labeled_pairs, load_prepared_data
 
 
+PAIR_FEATURE_SET_DEFINITIONS = {
+    "none": [],
+    "sex_aware_name": [
+        "same_first_name",
+        "same_last_name",
+        "same_midl_name",
+        "same_age",
+        "same_sex",
+        "same_house_num",
+        "same_street_name",
+        "same_zip_code",
+        "both_male",
+        "both_female",
+        "male_same_first_diff_last",
+        "female_same_first_diff_last",
+        "male_same_first_diff_last_same_age",
+        "female_same_first_diff_last_same_age",
+    ],
+}
+PAIR_FEATURE_SET_NAMES = list(PAIR_FEATURE_SET_DEFINITIONS.keys())
+
+
+def get_pair_feature_names(pair_feature_set="none"):
+    if pair_feature_set not in PAIR_FEATURE_SET_DEFINITIONS:
+        raise ValueError(f"Unknown pair_feature_set '{pair_feature_set}'.")
+    return list(PAIR_FEATURE_SET_DEFINITIONS[pair_feature_set])
+
+
+def _normalized_value(record, attribute):
+    return str(record.get(attribute, "")).strip().lower()
+
+
+def _same_nonempty(record1, record2, attribute):
+    left = _normalized_value(record1, attribute)
+    right = _normalized_value(record2, attribute)
+    return bool(left and right and left == right)
+
+
+def _is_male(record):
+    return _normalized_value(record, "sex") in {"m", "male"}
+
+
+def _is_female(record):
+    return _normalized_value(record, "sex") in {"f", "female"}
+
+
+def compute_pair_features_from_records(record1, record2, pair_feature_set="none"):
+    if pair_feature_set == "none":
+        return []
+    if pair_feature_set != "sex_aware_name":
+        raise ValueError(f"Unknown pair_feature_set '{pair_feature_set}'.")
+
+    same_first = _same_nonempty(record1, record2, "first_name")
+    same_last = _same_nonempty(record1, record2, "last_name")
+    same_midl = _same_nonempty(record1, record2, "midl_name")
+    same_age = _same_nonempty(record1, record2, "age")
+    same_sex = _same_nonempty(record1, record2, "sex")
+    same_house = _same_nonempty(record1, record2, "house_num")
+    same_street = _same_nonempty(record1, record2, "street_name")
+    same_zip = _same_nonempty(record1, record2, "zip_code")
+    last_name_diff = bool(
+        _normalized_value(record1, "last_name")
+        and _normalized_value(record2, "last_name")
+        and _normalized_value(record1, "last_name") != _normalized_value(record2, "last_name")
+    )
+    both_male = _is_male(record1) and _is_male(record2)
+    both_female = _is_female(record1) and _is_female(record2)
+
+    features = [
+        same_first,
+        same_last,
+        same_midl,
+        same_age,
+        same_sex,
+        same_house,
+        same_street,
+        same_zip,
+        both_male,
+        both_female,
+        both_male and same_first and last_name_diff,
+        both_female and same_first and last_name_diff,
+        both_male and same_first and last_name_diff and same_age,
+        both_female and same_first and last_name_diff and same_age,
+    ]
+    return [float(value) for value in features]
+
+
 class Vocabulary:
     def __init__(self, specials=None):
         if specials is None:
@@ -64,6 +151,7 @@ class NCVotersDataset(Dataset):
         strict_missing_ids=False,
         drop_missing_ids=True,
         sample_weight_column=None,
+        pair_feature_set="none",
     ):
         self.data_df = load_prepared_data(data_path)
         self.data_dict = self.data_df.set_index("id").to_dict("index")
@@ -73,6 +161,9 @@ class NCVotersDataset(Dataset):
         self.attributes = list(attributes)
         self.max_len = max_len
         self.sample_weight_column = sample_weight_column
+        self.pair_feature_set = pair_feature_set
+        self.pair_feature_names = get_pair_feature_names(pair_feature_set)
+        self.pair_feature_dim = len(self.pair_feature_names)
 
         for attr in self.attributes:
             if attr not in self.data_df.columns:
@@ -130,6 +221,13 @@ class NCVotersDataset(Dataset):
             return ""
         return " ".join([str(record.get(attr, "")) for attr in self.attributes])
 
+    def _get_pair_features(self, id1, id2):
+        if self.pair_feature_set == "none":
+            return []
+        record1 = self.data_dict.get(str(id1), {})
+        record2 = self.data_dict.get(str(id2), {})
+        return compute_pair_features_from_records(record1, record2, self.pair_feature_set)
+
     def __len__(self):
         return len(self.pairs)
 
@@ -140,13 +238,31 @@ class NCVotersDataset(Dataset):
 
         x1 = self.vocab.numericalize(s1, self.max_len)
         x2 = self.vocab.numericalize(s2, self.max_len)
+        pair_features = None
+        if self.pair_feature_dim > 0:
+            pair_features = torch.tensor(self._get_pair_features(row["id1"], row["id2"]), dtype=torch.float)
 
+        if self.sample_weight_column is not None and pair_features is not None:
+            return (
+                torch.tensor(x1, dtype=torch.long),
+                torch.tensor(x2, dtype=torch.long),
+                torch.tensor(row["label"], dtype=torch.float),
+                pair_features,
+                torch.tensor(float(row[self.sample_weight_column]), dtype=torch.float),
+            )
         if self.sample_weight_column is not None:
             return (
                 torch.tensor(x1, dtype=torch.long),
                 torch.tensor(x2, dtype=torch.long),
                 torch.tensor(row["label"], dtype=torch.float),
                 torch.tensor(float(row[self.sample_weight_column]), dtype=torch.float),
+            )
+        if pair_features is not None:
+            return (
+                torch.tensor(x1, dtype=torch.long),
+                torch.tensor(x2, dtype=torch.long),
+                torch.tensor(row["label"], dtype=torch.float),
+                pair_features,
             )
         return (
             torch.tensor(x1, dtype=torch.long),

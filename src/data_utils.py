@@ -21,6 +21,45 @@ DEFAULT_EXTENDED_ATTRIBUTES = DEFAULT_BASELINE_ATTRIBUTES + [
     "ethnic_desc",
 ]
 
+DEFAULT_EXTENDED_MIDL_ATTRIBUTES = [
+    "first_name",
+    "midl_name",
+    "last_name",
+    "house_num",
+    "street_name",
+    "zip_code",
+    "age",
+    "sex",
+    "race_desc",
+    "ethnic_desc",
+]
+
+DEFAULT_EXTENDED_NO_DEMO_ATTRIBUTES = DEFAULT_BASELINE_ATTRIBUTES + [
+    "age",
+    "sex",
+]
+
+DEFAULT_EXTENDED_NO_DEMO_MIDL_ATTRIBUTES = [
+    "first_name",
+    "midl_name",
+    "last_name",
+    "house_num",
+    "street_name",
+    "zip_code",
+    "age",
+    "sex",
+]
+
+ATTRIBUTE_SET_DEFINITIONS = {
+    "baseline": DEFAULT_BASELINE_ATTRIBUTES,
+    "extended": DEFAULT_EXTENDED_ATTRIBUTES,
+    "extended_midl": DEFAULT_EXTENDED_MIDL_ATTRIBUTES,
+    "extended_no_demo": DEFAULT_EXTENDED_NO_DEMO_ATTRIBUTES,
+    "extended_no_demo_midl": DEFAULT_EXTENDED_NO_DEMO_MIDL_ATTRIBUTES,
+}
+
+ATTRIBUTE_SET_NAMES = list(ATTRIBUTE_SET_DEFINITIONS.keys())
+
 
 def set_seed(seed):
     random.seed(seed)
@@ -37,10 +76,8 @@ def parse_attributes(attribute_set="baseline", attributes_csv=None):
             raise ValueError("attributes_csv was provided but no valid attributes were parsed.")
         return attrs
 
-    if attribute_set == "baseline":
-        return list(DEFAULT_BASELINE_ATTRIBUTES)
-    if attribute_set == "extended":
-        return list(DEFAULT_EXTENDED_ATTRIBUTES)
+    if attribute_set in ATTRIBUTE_SET_DEFINITIONS:
+        return list(ATTRIBUTE_SET_DEFINITIONS[attribute_set])
 
     raise ValueError(f"Unknown attribute_set '{attribute_set}'.")
 

@@ -75,9 +75,11 @@ class SiameseNetwork(nn.Module):
         cnn_kernel_sizes=(3, 4, 5),
         classifier_hidden_dim=64,
         dropout=0.2,
+        pair_feature_dim=0,
     ):
         super().__init__()
         self.encoder_type = encoder_type
+        self.pair_feature_dim = int(pair_feature_dim)
         if encoder_type == "bilstm":
             self.encoder = BiLSTMEncoder(
                 vocab_size=vocab_size,
@@ -95,18 +97,29 @@ class SiameseNetwork(nn.Module):
         else:
             raise ValueError(f"Unknown encoder_type: {encoder_type}")
 
+        classifier_input_dim = self.encoder.output_dim + self.pair_feature_dim
         self.classifier = nn.Sequential(
-            nn.Linear(self.encoder.output_dim, classifier_hidden_dim),
+            nn.Linear(classifier_input_dim, classifier_hidden_dim),
             nn.ReLU(),
             nn.Dropout(dropout),
             nn.Linear(classifier_hidden_dim, 1),
         )
 
-    def forward(self, x1, x2):
+    def forward(self, x1, x2, pair_features=None):
         h1 = self.encoder(x1)
         h2 = self.encoder(x2)
-        diff = torch.abs(h1 - h2)
-        return self.classifier(diff)
+        features = torch.abs(h1 - h2)
+        if self.pair_feature_dim > 0:
+            if pair_features is None:
+                pair_features = torch.zeros(
+                    (features.size(0), self.pair_feature_dim),
+                    dtype=features.dtype,
+                    device=features.device,
+                )
+            else:
+                pair_features = pair_features.to(features.device).float()
+            features = torch.cat([features, pair_features], dim=1)
+        return self.classifier(features)
 
 
 if __name__ == "__main__":

@@ -92,6 +92,7 @@ def run_siamese_predictions(args, candidate_df):
         attributes=list(config["attributes"]),
         strict_missing_ids=False,
         drop_missing_ids=True,
+        pair_feature_set=config.get("pair_feature_set", "none"),
     )
     loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
 
@@ -103,14 +104,21 @@ def run_siamese_predictions(args, candidate_df):
         cnn_channels=int(config.get("cnn_channels", config.get("hidden_dim", 64))),
         cnn_kernel_sizes=config.get("cnn_kernel_sizes", [3, 4, 5]),
         classifier_hidden_dim=int(config.get("classifier_hidden_dim", 64)),
+        pair_feature_dim=int(config.get("pair_feature_dim", 0)),
     ).to(device)
     model.load_state_dict(checkpoint["model_state_dict"])
     model.eval()
 
     probs = []
     with torch.no_grad():
-        for x1, x2, _ in loader:
-            logits = model(x1.to(device), x2.to(device)).squeeze(-1)
+        for batch in loader:
+            if len(batch) == 4:
+                x1, x2, _, pair_features = batch
+                pair_features = pair_features.to(device).float()
+            else:
+                x1, x2, _ = batch
+                pair_features = None
+            logits = model(x1.to(device), x2.to(device), pair_features=pair_features).squeeze(-1)
             probs.extend(torch.sigmoid(logits).cpu().numpy().tolist())
 
     threshold = float(checkpoint["best_threshold"])

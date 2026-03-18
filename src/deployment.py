@@ -11,10 +11,10 @@ import torch
 from sklearn.feature_extraction.text import TfidfVectorizer
 
 try:
-    from .dataset import Vocabulary
+    from .dataset import Vocabulary, compute_pair_features_from_records
     from .model import SiameseNetwork
 except ImportError:
-    from dataset import Vocabulary
+    from dataset import Vocabulary, compute_pair_features_from_records
     from model import SiameseNetwork
 
 
@@ -47,6 +47,30 @@ DEFAULT_COLUMN_ALIASES = {
     "race": "race_desc",
     "ethnicity": "ethnic_desc",
 }
+FIELD_LABELS = {
+    "first_name": "First name",
+    "midl_name": "Middle name",
+    "last_name": "Last name",
+    "house_num": "House number",
+    "street_name": "Street name",
+    "zip_code": "ZIP",
+    "age": "Age",
+    "sex": "Sex",
+    "race_desc": "Race",
+    "ethnic_desc": "Ethnicity",
+}
+PAIR_COMPARISON_FIELDS = [
+    "first_name",
+    "midl_name",
+    "last_name",
+    "house_num",
+    "street_name",
+    "zip_code",
+    "age",
+    "sex",
+    "race_desc",
+    "ethnic_desc",
+]
 
 
 class DeploymentError(RuntimeError):
@@ -383,6 +407,7 @@ def _safe_value(record: Dict[str, Any], attribute: str) -> str:
 
 def _pair_signals(record1: Dict[str, Any], record2: Dict[str, Any]) -> List[str]:
     same_first = _safe_value(record1, "first_name") and _safe_value(record1, "first_name") == _safe_value(record2, "first_name")
+    same_middle = _safe_value(record1, "midl_name") and _safe_value(record1, "midl_name") == _safe_value(record2, "midl_name")
     same_last = _safe_value(record1, "last_name") and _safe_value(record1, "last_name") == _safe_value(record2, "last_name")
     same_age = _safe_value(record1, "age") and _safe_value(record1, "age") == _safe_value(record2, "age")
     same_sex = _safe_value(record1, "sex") and _safe_value(record1, "sex") == _safe_value(record2, "sex")
@@ -398,6 +423,8 @@ def _pair_signals(record1: Dict[str, Any], record2: Dict[str, Any]) -> List[str]
         signals.append("same last name")
     elif same_first:
         signals.append("same first name")
+    if same_middle:
+        signals.append("same middle name")
 
     if same_address:
         signals.append("same street address")
@@ -424,6 +451,34 @@ def _pair_signals(record1: Dict[str, Any], record2: Dict[str, Any]) -> List[str]
     return signals[:5]
 
 
+def _pair_field_comparison(record1: Dict[str, Any], record2: Dict[str, Any]) -> Dict[str, List[Dict[str, Any]]]:
+    matching_fields = []
+    differing_fields = []
+
+    for attribute in PAIR_COMPARISON_FIELDS:
+        left_value = _safe_value(record1, attribute)
+        right_value = _safe_value(record2, attribute)
+        if not left_value and not right_value:
+            continue
+
+        field_row = {
+            "attribute": attribute,
+            "label": FIELD_LABELS.get(attribute, attribute),
+            "left": left_value,
+            "right": right_value,
+        }
+        if left_value == right_value:
+            if left_value:
+                matching_fields.append({**field_row, "value": left_value})
+        else:
+            differing_fields.append(field_row)
+
+    return {
+        "matching_fields": matching_fields,
+        "differing_fields": differing_fields,
+    }
+
+
 def _build_pair_payload(
     id1: str,
     id2: str,
@@ -445,6 +500,7 @@ def _build_pair_payload(
         "record1": _record_excerpt(record1, display_attributes),
         "record2": _record_excerpt(record2, display_attributes),
         "signals": _pair_signals(record1, record2),
+        **_pair_field_comparison(record1, record2),
     }
     if comparison_score is not None:
         payload["comparison_score"] = float(comparison_score)
@@ -697,7 +753,8 @@ def summarize_model_disagreements(
 
 def _record_excerpt(record: Dict[str, Any], attributes: Sequence[str]) -> Dict[str, Any]:
     payload = {"id": str(record.get("id", ""))}
-    for attr in attributes:
+    excerpt_attributes = list(dict.fromkeys(list(attributes) + PAIR_COMPARISON_FIELDS))
+    for attr in excerpt_attributes:
         if attr in record:
             payload[attr] = record.get(attr, "")
     return payload
@@ -746,9 +803,11 @@ class SiameseScorer:
             cnn_channels=int(config.get("cnn_channels", 64)),
             cnn_kernel_sizes=config.get("cnn_kernel_sizes", (3, 4, 5)),
             classifier_hidden_dim=int(config.get("classifier_hidden_dim", 64)),
+            pair_feature_dim=int(config.get("pair_feature_dim", 0)),
         ).to(self.device)
         self.model.load_state_dict(checkpoint["model_state_dict"])
         self.model.eval()
+        self.pair_feature_set = config.get("pair_feature_set", "none")
         self.metadata = {
             "kind": "siamese",
             "path": str(self.checkpoint_path),
@@ -758,6 +817,7 @@ class SiameseScorer:
             "blocking_mode": self.blocking_mode,
             "encoder_type": config.get("encoder_type", "bilstm"),
             "max_len": self.max_len,
+            "pair_feature_set": self.pair_feature_set,
         }
 
     def score_pairs(
@@ -786,7 +846,17 @@ class SiameseScorer:
                 ]
                 x1_tensor = torch.tensor(x1, dtype=torch.long, device=self.device)
                 x2_tensor = torch.tensor(x2, dtype=torch.long, device=self.device)
-                logits = self.model(x1_tensor, x2_tensor).squeeze(-1)
+                pair_features = None
+                if self.pair_feature_set != "none":
+                    pair_features = torch.tensor(
+                        [
+                            compute_pair_features_from_records(left_record, right_record, self.pair_feature_set)
+                            for left_record, right_record in zip(left_batch, right_batch)
+                        ],
+                        dtype=torch.float,
+                        device=self.device,
+                    )
+                logits = self.model(x1_tensor, x2_tensor, pair_features=pair_features).squeeze(-1)
                 chunks.append(torch.sigmoid(logits).detach().cpu().numpy())
         return np.concatenate(chunks).astype(float)
 

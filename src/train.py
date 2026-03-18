@@ -14,13 +14,14 @@ from tqdm import tqdm
 try:
     from .blocking import compute_block_mask, parse_blocking_keys, summarize_blocking
     from .data_utils import (
+        ATTRIBUTE_SET_NAMES,
         count_missing_pair_ids,
         load_labeled_pairs,
         load_prepared_data,
         parse_attributes,
         set_seed,
     )
-    from .dataset import NCVotersDataset
+    from .dataset import NCVotersDataset, PAIR_FEATURE_SET_NAMES
     from .hard_examples import (
         attach_hard_example_metadata,
         load_hard_example_artifact,
@@ -31,8 +32,15 @@ try:
     from .splits import build_splits, check_split_integrity, load_split_artifact, save_split_artifact
 except ImportError:
     from blocking import compute_block_mask, parse_blocking_keys, summarize_blocking
-    from data_utils import count_missing_pair_ids, load_labeled_pairs, load_prepared_data, parse_attributes, set_seed
-    from dataset import NCVotersDataset
+    from data_utils import (
+        ATTRIBUTE_SET_NAMES,
+        count_missing_pair_ids,
+        load_labeled_pairs,
+        load_prepared_data,
+        parse_attributes,
+        set_seed,
+    )
+    from dataset import NCVotersDataset, PAIR_FEATURE_SET_NAMES
     from hard_examples import attach_hard_example_metadata, load_hard_example_artifact, summarize_hard_example_metrics
     from metrics import compute_binary_metrics, select_threshold
     from model import SiameseNetwork
@@ -65,9 +73,10 @@ def parse_args():
     parser.add_argument("--cnn-channels", type=int, default=64)
     parser.add_argument("--cnn-kernel-sizes", default="3,4,5")
     parser.add_argument("--classifier-hidden-dim", type=int, default=64)
+    parser.add_argument("--pair-feature-set", choices=PAIR_FEATURE_SET_NAMES, default="none")
     parser.add_argument("--num-workers", type=int, default=0)
 
-    parser.add_argument("--attribute-set", choices=["baseline", "extended"], default="baseline")
+    parser.add_argument("--attribute-set", choices=ATTRIBUTE_SET_NAMES, default="baseline")
     parser.add_argument("--attributes-csv", default=None, help="Comma-separated list. Overrides --attribute-set.")
     parser.add_argument(
         "--blocking-keys",
@@ -171,9 +180,18 @@ def run_epoch(model, loader, criterion, optimizer, device, train_mode=True, disa
 
     iterator = tqdm(loader, desc=desc, disable=disable_progress)
     for batch in iterator:
-        if len(batch) == 4:
-            x1, x2, labels, sample_weights = batch
+        pair_features = None
+        if len(batch) == 5:
+            x1, x2, labels, pair_features, sample_weights = batch
+            pair_features = pair_features.to(device).float()
             sample_weights = sample_weights.to(device).float()
+        elif len(batch) == 4:
+            x1, x2, labels, extra = batch
+            if extra.ndim > 1:
+                pair_features = extra.to(device).float()
+                sample_weights = None
+            else:
+                sample_weights = extra.to(device).float()
         else:
             x1, x2, labels = batch
             sample_weights = None
@@ -185,7 +203,7 @@ def run_epoch(model, loader, criterion, optimizer, device, train_mode=True, disa
             optimizer.zero_grad()
 
         with torch.set_grad_enabled(train_mode):
-            logits = model(x1, x2).squeeze(-1)
+            logits = model(x1, x2, pair_features=pair_features).squeeze(-1)
             loss_values = criterion(logits, labels)
             if loss_values.ndim == 0:
                 loss = loss_values
@@ -283,7 +301,15 @@ def compute_monitor_value(args, val_metrics, val_hard_metrics):
     return value if np.isfinite(value) else float("-inf")
 
 
-def build_dataset_and_loader(args, pairs_df, vocab, attributes, shuffle=False, sample_weight_column=None, sampler=None):
+def build_dataset_and_loader(
+    args,
+    pairs_df,
+    vocab,
+    attributes,
+    shuffle=False,
+    sample_weight_column=None,
+    sampler=None,
+):
     dataset = NCVotersDataset(
         data_path=args.data_path,
         pairs_df=pairs_df,
@@ -293,6 +319,7 @@ def build_dataset_and_loader(args, pairs_df, vocab, attributes, shuffle=False, s
         strict_missing_ids=False,
         drop_missing_ids=True,
         sample_weight_column=sample_weight_column,
+        pair_feature_set=args.pair_feature_set,
     )
     if len(dataset) == 0:
         return dataset, None
@@ -387,6 +414,7 @@ def main():
         strict_missing_ids=False,
         drop_missing_ids=True,
         sample_weight_column=("sample_weight" if args.hard_weighting in {"loss", "both"} else None),
+        pair_feature_set=args.pair_feature_set,
     )
     if len(train_dataset) == 0:
         raise ValueError("Training candidate set is empty after blocking.")
@@ -434,6 +462,7 @@ def main():
         cnn_channels=args.cnn_channels,
         cnn_kernel_sizes=cnn_kernel_sizes,
         classifier_hidden_dim=args.classifier_hidden_dim,
+        pair_feature_dim=train_dataset.pair_feature_dim,
     ).to(device)
 
     pos_weight = compute_pos_weight(
@@ -620,6 +649,8 @@ def main():
             "cnn_channels": args.cnn_channels,
             "cnn_kernel_sizes": cnn_kernel_sizes,
             "classifier_hidden_dim": args.classifier_hidden_dim,
+            "pair_feature_set": args.pair_feature_set,
+            "pair_feature_dim": train_dataset.pair_feature_dim,
             "max_len": args.max_len,
             "attributes": attributes,
             "split_strategy": args.split_strategy,

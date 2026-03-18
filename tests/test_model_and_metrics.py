@@ -50,6 +50,17 @@ def test_dataset_getitem_and_model_forward(tmp_path):
     bilstm_logits = bilstm_model(x1.unsqueeze(0), x2.unsqueeze(0))
     assert bilstm_logits.shape == (1, 1)
 
+    bilstm_with_pair_features = SiameseNetwork(
+        vocab_size=ds.vocab.vocab_size,
+        embedding_dim=16,
+        hidden_dim=8,
+        encoder_type="bilstm",
+        pair_feature_dim=4,
+    )
+    pair_features = torch.tensor([[1.0, 0.0, 1.0, 0.0]], dtype=torch.float32)
+    bilstm_pair_logits = bilstm_with_pair_features(x1.unsqueeze(0), x2.unsqueeze(0), pair_features=pair_features)
+    assert bilstm_pair_logits.shape == (1, 1)
+
     charcnn_model = SiameseNetwork(
         vocab_size=ds.vocab.vocab_size,
         embedding_dim=16,
