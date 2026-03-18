@@ -193,7 +193,7 @@ function formatScore(value) {
 }
 
 function recordPreview(record) {
-  const name = [record.first_name, record.last_name].filter(Boolean).join(" ").trim();
+  const name = [record.first_name, record.midl_name, record.last_name].filter(Boolean).join(" ").trim();
   const address = [record.house_num, record.street_name].filter(Boolean).join(" ").trim();
   const suffix = [record.zip_code, record.age ? `age ${record.age}` : "", record.sex].filter(Boolean).join(", ");
   return [name ? `<strong>${name}</strong>` : "", address, suffix].filter(Boolean).join(", ");
@@ -206,6 +206,42 @@ function renderSignalBadges(signals = []) {
   return `
     <div class="badge-row">
       ${signals.map((signal) => `<span class="badge">${signal}</span>`).join("")}
+    </div>
+  `;
+}
+
+function renderFieldDiffs(pair) {
+  const differingFields = pair.differing_fields || [];
+  const matchingFields = pair.matching_fields || [];
+  if (!differingFields.length && !matchingFields.length) {
+    return "";
+  }
+
+  return `
+    <div class="field-diff-block">
+      ${differingFields.length ? `
+        <div class="field-diff-group">
+          <div class="field-diff-title">Differing fields</div>
+          <div class="field-diff-list">
+            ${differingFields.map((field) => `
+              <div class="field-diff-row">
+                <span class="field-diff-label">${field.label}</span>
+                <span class="field-diff-values">${field.left || "<blank>"} -> ${field.right || "<blank>"}</span>
+              </div>
+            `).join("")}
+          </div>
+        </div>
+      ` : ""}
+      ${matchingFields.length ? `
+        <div class="field-diff-group">
+          <div class="field-diff-title">Also matches on</div>
+          <div class="badge-row">
+            ${matchingFields.slice(0, 6).map((field) => `
+              <span class="badge subtle">${field.label}: ${field.value}</span>
+            `).join("")}
+          </div>
+        </div>
+      ` : ""}
     </div>
   `;
 }
@@ -244,6 +280,7 @@ function renderPairSection(title, subtitle, rows = [], options = {}) {
                 ${renderSignalBadges(pair.signals)}
                 <div>${recordPreview(pair.record1)}</div>
                 <div>${recordPreview(pair.record2)}</div>
+                ${renderFieldDiffs(pair)}
               </td>
             </tr>
           `).join("") : `

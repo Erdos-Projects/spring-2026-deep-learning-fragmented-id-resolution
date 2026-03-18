@@ -98,6 +98,20 @@ The response includes:
 - `duplicate_pairs`
 - `duplicate_clusters`
 
+The UI does not just dump raw pairs anymore. It now emphasizes:
+
+- high-confidence duplicates
+- borderline duplicates
+- near-miss non-duplicates
+- cluster summaries instead of every cluster
+- `Review recommended` disagreement cases between models
+
+For disagreement cases, each card shows:
+
+- record previews including `midl_name`
+- exact matching fields
+- exact differing fields
+
 For full-database search, the app defaults to:
 
 - blocking keys: `first_name`, `last_name`, `zip_code`
@@ -147,6 +161,7 @@ Each match reports the model score, duplicate decision, and the matched existing
 - Blocking is shared across all models at inference time.
 - TF-IDF is re-fit on the currently loaded dataset each time a new dataset is loaded.
 - Siamese models reuse the saved vocabulary and checkpoint threshold from training.
+- Some Siamese checkpoints can also consume explicit pair features from the checkpoint config, such as sex-aware name-comparison signals.
 
 ## Environment variables
 
