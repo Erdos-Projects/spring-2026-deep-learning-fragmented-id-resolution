@@ -530,6 +530,9 @@ The review-oriented result panels include:
 - record previews include `midl_name` when present so surname-expansion and middle-name cases are visible in the UI
 - preview sections are capped at `10` rows each for presentation clarity
 - export buttons provide a duplicate CSV and a human-review CSV for the current run
+- a persisted human-review queue lets a reviewer mark pairs as accepted duplicate, rejected duplicate, or uncertain
+- reviewers can add optional notes and switch the queue between `Pending only` and `Show all`
+- review decisions are stored in a SQLite database under the runtime directory and surfaced back in the UI
 
 Start the API:
 
@@ -557,3 +560,9 @@ Core endpoints:
 Detailed usage examples:
 
 - `docs/DEPLOYMENT.md`
+
+One-command local demo:
+
+```bash
+docker compose up --build
+```

@@ -17,6 +17,9 @@ const state = {
   datasetMode: "path",
   defaults: null,
   lastFindPayload: null,
+  reviewSummary: null,
+  recentReviews: [],
+  reviewQueueMode: "pending",
 };
 
 function byId(id) {
@@ -252,6 +255,22 @@ function formatScore(value) {
   return Number(value).toFixed(3);
 }
 
+function formatDecisionLabel(decision) {
+  return {
+    accept_duplicate: "Accepted duplicate",
+    reject_duplicate: "Rejected duplicate",
+    uncertain: "Marked uncertain",
+  }[decision] || decision || "Unknown";
+}
+
+function reviewDecisionBadgeClass(decision) {
+  return {
+    accept_duplicate: "success",
+    reject_duplicate: "danger",
+    uncertain: "warning",
+  }[decision] || "subtle";
+}
+
 function recordPreview(record) {
   const name = [record.first_name, record.midl_name, record.last_name].filter(Boolean).join(" ").trim();
   const address = [record.house_num, record.street_name].filter(Boolean).join(" ").trim();
@@ -306,6 +325,85 @@ function renderFieldDiffs(pair) {
   `;
 }
 
+function renderReviewState(pair) {
+  if (!pair.review_state) {
+    return `<div class="hint-text">No saved review decision yet.</div>`;
+  }
+
+  return `
+    <div class="review-state">
+      <div class="badge-row">
+        <span class="badge ${reviewDecisionBadgeClass(pair.review_state.decision)}">
+          ${pair.review_state.decision_label || formatDecisionLabel(pair.review_state.decision)}
+        </span>
+        <span class="badge subtle">Saved ${pair.review_state.updated_at}</span>
+      </div>
+      ${pair.review_state.notes ? `<div class="hint-text">Note: ${pair.review_state.notes}</div>` : ""}
+    </div>
+  `;
+}
+
+function renderReviewNoteEditor(pair) {
+  const existingNotes = pair.review_state?.notes || "";
+  return `
+    <div class="review-note-editor">
+      <label class="field-label" for="review-note-${pair.pair_key}">Optional note</label>
+      <textarea
+        id="review-note-${pair.pair_key}"
+        class="review-note-input"
+        rows="2"
+        data-pair-key="${pair.pair_key}"
+        placeholder="Add context for why this was accepted, rejected, or marked uncertain."
+      >${existingNotes}</textarea>
+    </div>
+  `;
+}
+
+function renderReviewActions(pair, sourceSection) {
+  const currentDecision = pair.review_state?.decision || "";
+  const actions = [
+    { decision: "accept_duplicate", label: "Accept duplicate" },
+    { decision: "reject_duplicate", label: "Reject duplicate" },
+    { decision: "uncertain", label: "Mark uncertain" },
+  ];
+  return `
+    <div class="review-actions">
+      ${actions.map((action) => `
+        <button
+          type="button"
+          class="ghost-button review-action-button ${currentDecision === action.decision ? "active" : ""}"
+          data-review-action="${action.decision}"
+          data-id1="${pair.id1}"
+          data-id2="${pair.id2}"
+          data-score="${pair.score ?? ""}"
+          data-comparison-model-name="${pair.comparison_model_name || ""}"
+          data-comparison-score="${pair.comparison_score ?? ""}"
+          data-cluster-id="${pair.cluster_id || ""}"
+          data-source-section="${sourceSection || ""}"
+        >
+          ${action.label}
+        </button>
+      `).join("")}
+    </div>
+  `;
+}
+
+function renderThresholdDecision(pair, threshold) {
+  if (threshold === null || threshold === undefined) {
+    return "";
+  }
+  const acceptedByModel = Number(pair.score) >= Number(threshold);
+  return `
+    <div class="badge-row">
+      <span class="badge ${acceptedByModel ? "success" : "warning"}">
+        ${acceptedByModel
+          ? "Model accepted this as a duplicate, but it is close to the threshold"
+          : "Model rejected this as a duplicate, but it is close to the threshold"}
+      </span>
+    </div>
+  `;
+}
+
 function renderPairSection(title, subtitle, rows = [], options = {}) {
   const displayRows = clampRows(rows);
   const reviewNote = options.reviewRecommended
@@ -342,6 +440,10 @@ function renderPairSection(title, subtitle, rows = [], options = {}) {
                 <div>${recordPreview(pair.record1)}</div>
                 <div>${recordPreview(pair.record2)}</div>
                 ${renderFieldDiffs(pair)}
+                ${options.threshold !== undefined ? renderThresholdDecision(pair, options.threshold) : ""}
+                ${options.reviewActions ? renderReviewState(pair) : ""}
+                ${options.reviewActions ? renderReviewNoteEditor(pair) : ""}
+                ${options.reviewActions ? renderReviewActions(pair, options.sourceSection) : ""}
               </td>
             </tr>
           `).join("") : `
@@ -417,6 +519,104 @@ function renderResultActions(payload) {
         >
           Export human-review CSV
         </button>
+      </div>
+    </div>
+  `;
+}
+
+function buildReviewQueue(payload) {
+  const allRows = dedupePairs(payload.exports?.review || []);
+  const pendingRows = allRows.filter((pair) => !pair.review_state);
+  const reviewedRows = allRows.filter((pair) => pair.review_state);
+  const activeRows = state.reviewQueueMode === "pending" ? pendingRows : allRows;
+
+  return {
+    allRows,
+    pendingRows,
+    reviewedRows,
+    visibleRows: clampRows(activeRows),
+  };
+}
+
+function renderReviewWorkflow(payload) {
+  const summary = payload.review_summary || state.reviewSummary || {
+    total: 0,
+    accepted_duplicate_count: 0,
+    rejected_duplicate_count: 0,
+    uncertain_count: 0,
+  };
+  const reviewQueueState = buildReviewQueue(payload);
+  const reviewQueue = reviewQueueState.visibleRows;
+  const recentReviews = payload.recent_reviews || state.recentReviews || [];
+
+  return `
+    <div class="result-block">
+      <h3>Human review workflow</h3>
+      <p class="section-text">
+        These are the cases closest to the duplicate threshold. Review them before merging records into one person.
+      </p>
+      <div class="stats-grid">
+        <div class="stat-card">
+          <span class="mini-label">Saved decisions</span>
+          <strong>${summary.total || 0}</strong>
+        </div>
+        <div class="stat-card">
+          <span class="mini-label">Accepted duplicate</span>
+          <strong>${summary.accepted_duplicate_count || 0}</strong>
+        </div>
+        <div class="stat-card">
+          <span class="mini-label">Rejected duplicate</span>
+          <strong>${summary.rejected_duplicate_count || 0}</strong>
+        </div>
+        <div class="stat-card">
+          <span class="mini-label">Marked uncertain</span>
+          <strong>${summary.uncertain_count || 0}</strong>
+        </div>
+      </div>
+      <div class="results-toolbar">
+        <div class="segmented-control compact-control">
+          <button
+            type="button"
+            class="segmented-option ${state.reviewQueueMode === "pending" ? "active" : ""}"
+            data-review-queue-mode="pending"
+          >
+            Pending only (${reviewQueueState.pendingRows.length})
+          </button>
+          <button
+            type="button"
+            class="segmented-option ${state.reviewQueueMode === "all" ? "active" : ""}"
+            data-review-queue-mode="all"
+          >
+            Show all (${reviewQueueState.allRows.length})
+          </button>
+        </div>
+        <span class="hint-text">
+          ${reviewQueueState.reviewedRows.length} already reviewed in this run.
+        </span>
+      </div>
+    </div>
+    ${renderPairSection(
+      "Human review queue",
+      state.reviewQueueMode === "pending"
+        ? `Near-threshold pairs that still need a human decision. The queue auto-fills with the next pending cases from this run.`
+        : `Near-threshold pairs from this run, including cases you have already reviewed.`,
+      reviewQueue,
+      { reviewActions: true, sourceSection: "review_queue", threshold: payload.threshold }
+    )}
+    <div class="result-block">
+      <h3>Recent review decisions</h3>
+      <div class="match-list">
+        ${recentReviews.length ? recentReviews.map((review) => `
+          <div class="match-card">
+            <div class="badge-row">
+              <span class="badge mono">${review.id1} / ${review.id2}</span>
+              <span class="badge ${reviewDecisionBadgeClass(review.decision)}">${review.decision_label}</span>
+              <span class="badge subtle">${review.updated_at}</span>
+            </div>
+            <div>${recordPreview(review.record1)}</div>
+            <div>${recordPreview(review.record2)}</div>
+          </div>
+        `).join("") : "No review decisions have been saved for the current dataset yet."}
       </div>
     </div>
   `;
@@ -555,13 +755,13 @@ function renderDisagreementSection(disagreement) {
       "Review recommended: selected model says duplicate",
       "These pairs were flagged as duplicates by the selected model but not by the comparison model.",
       disagreement.selected_only_duplicates || [],
-      { reviewRecommended: true }
+      { reviewRecommended: true, reviewActions: true, sourceSection: "selected_only_disagreement" }
     )}
     ${renderPairSection(
       "Review recommended: comparison model says duplicate",
       "These pairs were flagged as duplicates by the comparison model but not by the selected model.",
       disagreement.comparison_only_duplicates || [],
-      { reviewRecommended: true }
+      { reviewRecommended: true, reviewActions: true, sourceSection: "comparison_only_disagreement" }
     )}
   `;
 }
@@ -583,19 +783,10 @@ function renderFindResults(payload) {
       ${renderResultActions(payload)}
       ${renderPairSection(
         "High-confidence duplicates",
-        "The strongest predicted duplicates in this search run.",
+        "The strongest predicted duplicates in this search run. These are the best candidates for automatic merges.",
         payload.high_confidence_duplicates || []
       )}
-      ${renderPairSection(
-        "Borderline duplicates",
-        "The lowest-scoring pairs that still passed the duplicate threshold.",
-        payload.borderline_duplicates || []
-      )}
-      ${renderPairSection(
-        "Near-miss non-duplicates",
-        "Pairs that came closest to the threshold but were still rejected.",
-        payload.near_miss_non_duplicates || []
-      )}
+      ${renderReviewWorkflow(payload)}
       ${renderRepresentativeCases(payload.representative_cases || {})}
       ${renderPatternSummary(payload.duplicate_pattern_summary || [])}
       ${renderClusterSummary(clusterSummary)}
@@ -650,6 +841,8 @@ async function refreshAppState(showInfo = false) {
   state.models = payload.models || [];
   state.dataset = payload.dataset;
   state.defaults = payload.defaults || null;
+  state.reviewSummary = payload.review_summary || null;
+  state.recentReviews = payload.recent_reviews || [];
   state.selectedModel = state.selectedModel || chooseDefaultModel(state.models, payload.defaults?.preferred_model);
   renderDatasetSummary();
   syncBlockingControlsFromModel();
@@ -732,6 +925,8 @@ async function runFindDuplicates() {
     }),
   });
   state.lastFindPayload = payload;
+  state.reviewSummary = payload.review_summary || state.reviewSummary;
+  state.recentReviews = payload.recent_reviews || state.recentReviews;
   renderFindResults(payload);
   showBanner("Duplicate search completed.");
 }
@@ -830,31 +1025,88 @@ function wireEvents() {
   });
 
   byId("results-root").addEventListener("click", (event) => {
-    const button = event.target.closest("[data-export-kind]");
-    if (!button || !state.lastFindPayload) {
+    const exportButton = event.target.closest("[data-export-kind]");
+    if (exportButton && state.lastFindPayload) {
+      const kind = exportButton.dataset.exportKind;
+      const exportsPayload = state.lastFindPayload.exports || {};
+      if (kind === "duplicates") {
+        const rows = dedupePairs(exportsPayload.duplicates || []);
+        if (!rows.length) {
+          showBanner("There are no duplicate rows available to export for this run.", "error");
+          return;
+        }
+        downloadCsv("duplicates_found.csv", pairRowsToCsv(rows, "duplicates"));
+        return;
+      }
+
+      if (kind === "review") {
+        const rows = dedupePairs(exportsPayload.review || []);
+        if (!rows.length) {
+          showBanner("There are no human-review rows available to export for this run.", "error");
+          return;
+        }
+        downloadCsv("human_review_queue.csv", pairRowsToCsv(rows, "human_review"));
+        return;
+      }
+    }
+
+    const queueModeButton = event.target.closest("[data-review-queue-mode]");
+    if (queueModeButton && state.lastFindPayload) {
+      state.reviewQueueMode = queueModeButton.dataset.reviewQueueMode;
+      renderFindResults(state.lastFindPayload);
       return;
     }
 
-    const kind = button.dataset.exportKind;
-    const exportsPayload = state.lastFindPayload.exports || {};
-    if (kind === "duplicates") {
-      const rows = dedupePairs(exportsPayload.duplicates || []);
-      if (!rows.length) {
-        showBanner("There are no duplicate rows available to export for this run.", "error");
-        return;
-      }
-      downloadCsv("duplicates_found.csv", pairRowsToCsv(rows, "duplicates"));
+    const reviewButton = event.target.closest("[data-review-action]");
+    if (!reviewButton || !state.lastFindPayload) {
       return;
     }
 
-    if (kind === "review") {
-      const rows = dedupePairs(exportsPayload.review || []);
-      if (!rows.length) {
-        showBanner("There are no human-review rows available to export for this run.", "error");
-        return;
-      }
-      downloadCsv("human_review_queue.csv", pairRowsToCsv(rows, "human_review"));
-    }
+    const noteInput = reviewButton.closest("td")?.querySelector(".review-note-input");
+    hideBanner();
+    fetchJson("/reviews", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id1: reviewButton.dataset.id1,
+        id2: reviewButton.dataset.id2,
+        decision: reviewButton.dataset.reviewAction,
+        model_name: state.selectedModel,
+        score: reviewButton.dataset.score ? Number(reviewButton.dataset.score) : null,
+        comparison_model_name: reviewButton.dataset.comparisonModelName || null,
+        comparison_score: reviewButton.dataset.comparisonScore ? Number(reviewButton.dataset.comparisonScore) : null,
+        source_section: reviewButton.dataset.sourceSection || null,
+        cluster_id: reviewButton.dataset.clusterId || null,
+        notes: noteInput ? noteInput.value.trim() : "",
+      }),
+    })
+      .then((payload) => {
+        const savedReview = payload.saved_review;
+        const sectionsToUpdate = [
+          ...(state.lastFindPayload.high_confidence_duplicates || []),
+          ...(state.lastFindPayload.borderline_duplicates || []),
+          ...(state.lastFindPayload.near_miss_non_duplicates || []),
+          ...(state.lastFindPayload.review_queue || []),
+          ...(state.lastFindPayload.exports?.duplicates || []),
+          ...(state.lastFindPayload.exports?.review || []),
+          ...(state.lastFindPayload.disagreement_analysis?.selected_only_duplicates || []),
+          ...(state.lastFindPayload.disagreement_analysis?.comparison_only_duplicates || []),
+        ];
+        for (const pair of sectionsToUpdate) {
+          if (pair.pair_key === savedReview.pair_key) {
+            pair.review_state = savedReview;
+          }
+        }
+        state.reviewSummary = payload.review_summary || state.reviewSummary;
+        state.recentReviews = payload.recent_reviews || state.recentReviews;
+        state.lastFindPayload.review_summary = state.reviewSummary;
+        state.lastFindPayload.recent_reviews = state.recentReviews;
+        renderFindResults(state.lastFindPayload);
+        showBanner(`Saved review decision: ${savedReview.decision_label}.`);
+      })
+      .catch((error) => {
+        showBanner(formatErrorMessage(error.message), "error");
+      });
   });
 }
 

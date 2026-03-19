@@ -42,6 +42,16 @@ The user-facing web app is intentionally simpler than the API:
   2. choose a task
   3. run either a full duplicate scan or a single-record check
 
+This deployment now also includes a persisted human-review workflow:
+
+- reviewers can mark a near-threshold pair as:
+  - accepted duplicate
+  - rejected duplicate
+  - uncertain
+- reviewers can add an optional note explaining the decision
+- those decisions are stored in a SQLite database under the runtime directory
+- the app shows a review queue, review counters, recent saved decisions, and a `Pending only / Show all` queue filter for the current dataset
+
 ## Local run
 
 Create the environment if needed:
@@ -115,8 +125,8 @@ The response includes:
 The UI does not just dump raw pairs anymore. It now emphasizes:
 
 - high-confidence duplicates
-- borderline duplicates
-- near-miss non-duplicates
+- a human-review queue that combines near-threshold accepted and rejected cases
+- persisted review decisions with optional notes
 - cluster summaries instead of every cluster
 - optional `Review recommended` disagreement cases between models
 
@@ -130,6 +140,19 @@ The visible preview sections are capped at `10` rows each for presentation clari
 
 - a duplicate CSV for the full predicted duplicate queue from the current run
 - a human-review CSV for near-threshold cases on either side of the threshold
+
+Review-decision endpoints:
+
+- `GET /reviews`
+- `POST /reviews`
+
+Each saved review decision is stored with:
+
+- canonical pair ids
+- dataset source
+- decision label
+- model score context
+- record snapshots for auditability
 
 For full-database search, the app defaults to:
 
@@ -199,6 +222,20 @@ uvicorn src.api:app --host 0.0.0.0 --port 8000
 ```
 
 ## Docker
+
+For a one-command local demo with persisted runtime state:
+
+```powershell
+docker compose up --build
+```
+
+This starts the app and:
+
+- exposes it on `http://127.0.0.1:8000/`
+- auto-loads `data/processed/ncvoters_prepared.tsv`
+- persists the review database and runtime dataset state in a named Docker volume
+
+You can still use the plain Docker commands if you prefer:
 
 Build:
 

@@ -98,6 +98,7 @@ def test_api_upload_find_and_check_entry_with_tfidf():
             "last_name",
             "zip_code",
         ]
+        assert state_payload["review_summary"]["total"] == 0
 
         upload_frame = _sample_runtime_frame().rename(
             columns={
@@ -139,6 +140,9 @@ def test_api_upload_find_and_check_entry_with_tfidf():
         assert "duplicate_pattern_summary" in payload
         assert "representative_cases" in payload
         assert "disagreement_analysis" in payload
+        assert "review_queue" in payload
+        assert "review_summary" in payload
+        assert "recent_reviews" in payload
         assert "exports" in payload
         assert payload["disagreement_analysis"]["requested"] is False
         assert payload["exports"]["duplicates"]
@@ -146,6 +150,32 @@ def test_api_upload_find_and_check_entry_with_tfidf():
         assert any(
             {pair["id1"], pair["id2"]} == {"r1", "r2"} for pair in payload["high_confidence_duplicates"]
         )
+
+        review_response = client.post(
+            "/reviews",
+            json={
+                "id1": "r1",
+                "id2": "r2",
+                "decision": "accept_duplicate",
+                "model_name": "tfidf",
+                "score": 0.99,
+                "source_section": "review_queue",
+                "notes": "Looks like the same voter after address normalization.",
+            },
+        )
+        assert review_response.status_code == 200
+        review_payload = review_response.json()
+        assert review_payload["saved_review"]["decision"] == "accept_duplicate"
+        assert review_payload["saved_review"]["notes"] == "Looks like the same voter after address normalization."
+        assert review_payload["review_summary"]["accepted_duplicate_count"] == 1
+        assert review_payload["recent_reviews"][0]["pair_key"] == "r1::r2"
+
+        list_reviews_response = client.get("/reviews")
+        assert list_reviews_response.status_code == 200
+        list_reviews_payload = list_reviews_response.json()
+        assert list_reviews_payload["review_summary"]["total"] == 1
+        assert list_reviews_payload["reviews"][0]["decision"] == "accept_duplicate"
+        assert list_reviews_payload["reviews"][0]["notes"] == "Looks like the same voter after address normalization."
 
         entry_response = client.post(
             "/duplicates/check-entry",

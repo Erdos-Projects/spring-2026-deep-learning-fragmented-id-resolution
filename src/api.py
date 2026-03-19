@@ -52,6 +52,19 @@ class EntryCheckRequest(BaseModel):
     max_candidates: int = 50000
 
 
+class ReviewDecisionRequest(BaseModel):
+    id1: str
+    id2: str
+    decision: str = Field(..., pattern="^(accept_duplicate|reject_duplicate|uncertain)$")
+    model_name: str = Field(default="siamese_bilstm")
+    score: Optional[float] = None
+    comparison_model_name: Optional[str] = None
+    comparison_score: Optional[float] = None
+    source_section: Optional[str] = None
+    cluster_id: Optional[str] = None
+    notes: str = ""
+
+
 def _normalize_blocking_keys(blocking_keys: Optional[List[str]]) -> Optional[List[str]]:
     if blocking_keys is None:
         return None
@@ -109,6 +122,8 @@ def create_app(service: Optional[DuplicateDetectionService] = None) -> FastAPI:
                 "clear_dataset": "DELETE /dataset",
                 "find_duplicates": "POST /duplicates/find",
                 "check_entry": "POST /duplicates/check-entry",
+                "save_review": "POST /reviews",
+                "list_reviews": "GET /reviews",
             },
         }
 
@@ -121,6 +136,8 @@ def create_app(service: Optional[DuplicateDetectionService] = None) -> FastAPI:
             if app.state.service.current_dataset is None
             else app.state.service.current_dataset.summary(),
             "startup_warning": getattr(app.state, "startup_warning", None),
+            "review_summary": app.state.service.review_summary(),
+            "recent_reviews": app.state.service.list_review_decisions(limit=10),
             "defaults": {
                 "preferred_model": next(
                     (
@@ -185,6 +202,35 @@ def create_app(service: Optional[DuplicateDetectionService] = None) -> FastAPI:
     def clear_dataset():
         app.state.service.clear_dataset()
         return {"message": "Dataset cleared."}
+
+    @app.get("/reviews")
+    def list_reviews(limit: int = 20):
+        return {
+            "review_summary": app.state.service.review_summary(),
+            "reviews": app.state.service.list_review_decisions(limit=limit),
+        }
+
+    @app.post("/reviews")
+    def save_review(request: ReviewDecisionRequest):
+        try:
+            return app.state.service.save_review_decision(
+                id1=request.id1,
+                id2=request.id2,
+                decision=request.decision,
+                model_name=request.model_name,
+                score=request.score,
+                comparison_model_name=request.comparison_model_name,
+                comparison_score=request.comparison_score,
+                source_section=request.source_section,
+                cluster_id=request.cluster_id,
+                notes=request.notes,
+            )
+        except (DatasetNotLoadedError, ModelUnavailableError) as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except DeploymentError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     @app.post("/duplicates/find")
     def find_duplicates(request: DuplicateSearchRequest):

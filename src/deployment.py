@@ -13,9 +13,11 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 try:
     from .dataset import Vocabulary, compute_pair_features_from_records
     from .model import SiameseNetwork
+    from .review_store import ReviewStore, VALID_REVIEW_DECISIONS, canonical_pair
 except ImportError:
     from dataset import Vocabulary, compute_pair_features_from_records
     from model import SiameseNetwork
+    from review_store import ReviewStore, VALID_REVIEW_DECISIONS, canonical_pair
 
 
 NORMALIZE_PATTERN = re.compile(r"[\W_]+", re.UNICODE)
@@ -491,9 +493,11 @@ def _build_pair_payload(
     comparison_model_name: Optional[str] = None,
     comparison_prediction: Optional[bool] = None,
 ) -> Dict[str, Any]:
+    _, _, pair_key = canonical_pair(id1, id2)
     record1 = {"id": str(id1), **data_lookup[str(id1)]}
     record2 = {"id": str(id2), **data_lookup[str(id2)]}
     payload = {
+        "pair_key": pair_key,
         "id1": str(id1),
         "id2": str(id2),
         "score": float(score),
@@ -510,6 +514,15 @@ def _build_pair_payload(
     if comparison_prediction is not None:
         payload["comparison_prediction"] = bool(comparison_prediction)
     return payload
+
+
+def _attach_review_metadata(
+    pair_payloads: List[Dict[str, Any]],
+    review_lookup: Dict[str, Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    for payload in pair_payloads:
+        payload["review_state"] = review_lookup.get(str(payload.get("pair_key")))
+    return pair_payloads
 
 
 def _select_display_rows(
@@ -939,6 +952,7 @@ class DuplicateDetectionService:
         self.runtime_dir.mkdir(parents=True, exist_ok=True)
         self.dataset_dir = self.runtime_dir / "datasets"
         self.dataset_dir.mkdir(parents=True, exist_ok=True)
+        self.review_store = ReviewStore(self.runtime_dir / "review_store.sqlite3")
         self.current_dataset: Optional[RuntimeDataset] = None
         self.models: Dict[str, Any] = {}
         self.device = device
@@ -1000,6 +1014,55 @@ class DuplicateDetectionService:
         if self.current_dataset is None:
             raise DatasetNotLoadedError("No dataset has been loaded.")
         return self.current_dataset.summary()
+
+    def review_summary(self) -> Dict[str, Any]:
+        dataset_source = self.current_dataset.source_name if self.current_dataset is not None else None
+        return self.review_store.summary(dataset_source=dataset_source)
+
+    def list_review_decisions(self, limit: int = 20) -> List[Dict[str, Any]]:
+        dataset_source = self.current_dataset.source_name if self.current_dataset is not None else None
+        return self.review_store.list_decisions(dataset_source=dataset_source, limit=limit)
+
+    def save_review_decision(
+        self,
+        *,
+        id1: str,
+        id2: str,
+        decision: str,
+        model_name: str,
+        score: Optional[float] = None,
+        comparison_model_name: Optional[str] = None,
+        comparison_score: Optional[float] = None,
+        source_section: Optional[str] = None,
+        cluster_id: Optional[str] = None,
+        notes: str = "",
+    ) -> Dict[str, Any]:
+        runtime_dataset = self._require_dataset()
+        lookup = runtime_dataset.lookup
+        left_id, right_id, _ = canonical_pair(id1, id2)
+        if left_id not in lookup or right_id not in lookup:
+            raise DeploymentError(f"Pair ids '{id1}' and '{id2}' were not found in the loaded dataset.")
+
+        saved = self.review_store.save_decision(
+            id1=left_id,
+            id2=right_id,
+            dataset_source=runtime_dataset.source_name,
+            model_name=model_name,
+            decision=decision,
+            notes=notes,
+            score=score,
+            comparison_model_name=comparison_model_name,
+            comparison_score=comparison_score,
+            source_section=source_section,
+            cluster_id=cluster_id,
+            record1=_record_excerpt({"id": left_id, **lookup[left_id]}, PAIR_COMPARISON_FIELDS),
+            record2=_record_excerpt({"id": right_id, **lookup[right_id]}, PAIR_COMPARISON_FIELDS),
+        )
+        return {
+            "saved_review": saved,
+            "review_summary": self.review_summary(),
+            "recent_reviews": self.list_review_decisions(limit=10),
+        }
 
     def _require_dataset(self) -> RuntimeDataset:
         if self.current_dataset is None:
@@ -1111,7 +1174,6 @@ class DuplicateDetectionService:
             display_attributes=display_attributes,
             cluster_membership=cluster_membership,
         )
-
         representative_cases = {
             "highest_confidence_duplicate": high_confidence_duplicates[0] if high_confidence_duplicates else None,
             "most_borderline_duplicate": borderline_duplicates[0] if borderline_duplicates else None,
@@ -1157,6 +1219,35 @@ class DuplicateDetectionService:
             )
             disagreement_analysis["requested"] = True
 
+        all_review_pairs = (
+            high_confidence_duplicates
+            + borderline_duplicates
+            + near_miss_non_duplicates
+            + export_duplicate_pairs
+            + export_review_pairs
+            + disagreement_analysis.get("selected_only_duplicates", [])
+            + disagreement_analysis.get("comparison_only_duplicates", [])
+        )
+        review_lookup = self.review_store.get_decisions_for_pairs(
+            [(payload["id1"], payload["id2"]) for payload in all_review_pairs]
+        )
+        high_confidence_duplicates = _attach_review_metadata(high_confidence_duplicates, review_lookup)
+        borderline_duplicates = _attach_review_metadata(borderline_duplicates, review_lookup)
+        near_miss_non_duplicates = _attach_review_metadata(near_miss_non_duplicates, review_lookup)
+        export_duplicate_pairs = _attach_review_metadata(export_duplicate_pairs, review_lookup)
+        export_review_pairs = _attach_review_metadata(export_review_pairs, review_lookup)
+        review_queue = export_review_pairs[:top_k]
+        review_summary = self.review_summary()
+        recent_reviews = self.list_review_decisions(limit=10)
+        disagreement_analysis["selected_only_duplicates"] = _attach_review_metadata(
+            disagreement_analysis.get("selected_only_duplicates", []),
+            review_lookup,
+        )
+        disagreement_analysis["comparison_only_duplicates"] = _attach_review_metadata(
+            disagreement_analysis.get("comparison_only_duplicates", []),
+            review_lookup,
+        )
+
         return {
             "model_name": model_name,
             "threshold": threshold_value,
@@ -1174,6 +1265,9 @@ class DuplicateDetectionService:
             "duplicate_pattern_summary": summarize_duplicate_patterns(duplicate_df, lookup),
             "representative_cases": representative_cases,
             "disagreement_analysis": disagreement_analysis,
+            "review_queue": review_queue,
+            "review_summary": review_summary,
+            "recent_reviews": recent_reviews,
             "exports": {
                 "duplicates": export_duplicate_pairs,
                 "review": export_review_pairs,
