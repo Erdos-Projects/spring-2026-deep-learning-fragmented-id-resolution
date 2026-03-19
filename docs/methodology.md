@@ -207,7 +207,7 @@ The sweep output is:
 
 - `models/experiments/hard_weight_tuning_bilstm_blended/tuning_summary.tsv`
 
-The deployment-selected checkpoint is:
+The original deployment-selected checkpoint was:
 
 - `models/experiments/hard_weight_tuning_bilstm_blended/both_pos0.50_neg0.25_blended_score/best_model.pth`
 
@@ -267,9 +267,26 @@ Conclusion:
 The deployment app currently uses:
 
 - TF-IDF as the non-deep benchmark
-- the tuned BiLSTM Siamese checkpoint above as the default deep model
+- the tuned BiLSTM checkpoint:
+  - `models/experiments/hard_weight_tuning_extended_midl_sex_aware_bilstm_blended/both_pos0.50_neg0.75_blended_score/best_model.pth`
 
-This makes the product demo reflect the current best validated tradeoff between easy-case accuracy and hard-case robustness.
+Reason:
+
+- it adds `midl_name`
+- it uses sex-aware pair features instead of a brittle hard rule
+- it fixes the obvious surname-expansion duplicate misses that appeared in deployment review
+- it still keeps `hard-negative rejection = 1.0` on the mined hard test subset
+
+Key metrics for this deployment default:
+
+- F1: `0.9935`
+- PR-AUC: `0.9998`
+- hard-subset F1: `0.9833`
+- easy-subset F1: `0.9971`
+- hard-positive recall: `0.9672`
+- hard-negative rejection: `1.0000`
+
+This makes the product demo reflect the current best validated tradeoff between easy-case accuracy, difficult-case behavior, and real review-case quality.
 
 ## 14. Next Iteration Priorities
 

@@ -17,9 +17,14 @@ By default, the service uses:
 
 - TF-IDF from the saved blocked-pipeline extended-attribute baseline artifacts
 - the tuned BiLSTM Siamese checkpoint from:
-  - `models/experiments/hard_weight_tuning_bilstm_blended/both_pos0.50_neg0.25_blended_score/best_model.pth`
+  - `models/experiments/hard_weight_tuning_extended_midl_sex_aware_bilstm_blended/both_pos0.50_neg0.75_blended_score/best_model.pth`
 
-That tuned BiLSTM is the current recommended deployment model because it improved both overall F1 and hard-subset F1 over the previous Siamese checkpoint while staying well ahead of the TF-IDF baseline.
+That tuned BiLSTM is the current recommended deployment model because it:
+
+- adds `midl_name` to the encoded attribute set
+- uses explicit sex-aware pair features for name comparison
+- fixes the surname-expansion duplicate cases that were surfacing in the deployment review UI
+- preserves the strong hard-negative rejection of the earlier deployment checkpoint
 
 We also ran the same hard-example sweep for `siamese_charcnn`:
 

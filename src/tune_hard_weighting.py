@@ -9,8 +9,10 @@ import pandas as pd
 
 try:
     from .data_utils import ATTRIBUTE_SET_NAMES
+    from .dataset import PAIR_FEATURE_SET_NAMES
 except ImportError:
     from data_utils import ATTRIBUTE_SET_NAMES
+    from dataset import PAIR_FEATURE_SET_NAMES
 
 
 def parse_args():
@@ -21,6 +23,7 @@ def parse_args():
     parser.add_argument("--split-path", default="data/processed/splits/id_disjoint_seed42.tsv")
     parser.add_argument("--hard-example-path", required=True)
     parser.add_argument("--attribute-set", choices=ATTRIBUTE_SET_NAMES, default="extended")
+    parser.add_argument("--pair-feature-set", choices=PAIR_FEATURE_SET_NAMES, default="none")
     parser.add_argument("--blocking-keys", default="first_name,age")
     parser.add_argument("--blocking-mode", choices=["all", "any"], default="any")
     parser.add_argument("--encoder", choices=["bilstm", "charcnn"], default="bilstm")
@@ -76,6 +79,8 @@ def _build_command(args, run_dir, mode, pos_scale, neg_scale):
         args.split_path,
         "--attribute-set",
         args.attribute_set,
+        "--pair-feature-set",
+        args.pair_feature_set,
         "--blocking-keys",
         args.blocking_keys,
         "--blocking-mode",

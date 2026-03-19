@@ -534,10 +534,12 @@ The completed hard-example sweeps show:
 - tuned BiLSTM improves both overall and hard-subset performance over the earlier Siamese checkpoint
 - CharCNN can push the mined hard subset slightly higher in one setting
 - but CharCNN gives up too much overall and easy-case quality to replace BiLSTM as the deployment default
+- the latest deployment default now uses `extended_midl` plus `sex_aware_name` pair features because it fixes the surname-expansion review cases while keeping perfect mined hard-negative rejection
 
 Relevant artifacts:
 
 - `models/experiments/hard_weight_tuning_bilstm_blended/tuning_summary.tsv`
+- `models/experiments/hard_weight_tuning_extended_midl_sex_aware_bilstm_blended/tuning_summary.tsv`
 - `models/experiments/hard_weight_tuning_charcnn_blended/tuning_summary.tsv`
 - `models/experiments/encoder_hard_weight_comparison.tsv`
 

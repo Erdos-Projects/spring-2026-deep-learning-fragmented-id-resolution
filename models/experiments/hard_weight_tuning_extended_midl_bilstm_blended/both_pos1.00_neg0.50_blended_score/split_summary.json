@@ -1,0 +1,17 @@
+{
+  "train_pairs": 54025,
+  "train_pos": 4860,
+  "train_neg": 49165,
+  "val_pairs": 2241,
+  "val_pos": 210,
+  "val_neg": 2031,
+  "test_pairs": 2291,
+  "test_pos": 231,
+  "test_neg": 2060,
+  "train_ids": 9310,
+  "val_ids": 1310,
+  "test_ids": 1361,
+  "train_val_id_overlap": 0,
+  "train_test_id_overlap": 0,
+  "val_test_id_overlap": 0
+}

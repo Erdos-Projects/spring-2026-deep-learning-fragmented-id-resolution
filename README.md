@@ -397,9 +397,9 @@ Hard-example mining artifact:
 
 Best tuned deployment checkpoint:
 
-- `models/experiments/hard_weight_tuning_bilstm_blended/both_pos0.50_neg0.25_blended_score/best_model.pth`
+- `models/experiments/hard_weight_tuning_extended_midl_sex_aware_bilstm_blended/both_pos0.50_neg0.75_blended_score/best_model.pth`
 
-This tuned BiLSTM is the current default Siamese model used by the deployment app.
+This tuned BiLSTM with `extended_midl` and `sex_aware_name` pair features is the current default Siamese model used by the deployment app.
 
 Encoder comparison summary:
 
@@ -442,7 +442,16 @@ Interpretation:
 - TF-IDF remains the operational non-deep benchmark.
 - The tuned Siamese model now improves both overall F1 and hard-subset F1 relative to the previous Siamese checkpoint.
 - CharCNN can push the mined hard subset slightly higher in one setting, but it gives up too much overall and easy-case quality.
-- The chosen BiLSTM deployment checkpoint is still the best tradeoff we found between easy-case quality and difficult-case behavior.
+- The chosen BiLSTM deployment checkpoint now uses `midl_name` plus sex-aware pair features and is the best tradeoff we found between easy-case quality, difficult-case behavior, and the real disagreement cases surfaced in the UI.
+
+Current deployment-default metrics:
+
+- F1: `0.9935`
+- PR-AUC: `0.9998`
+- hard-subset F1: `0.9833`
+- easy-subset F1: `0.9971`
+- hard-positive recall: `0.9672`
+- hard-negative rejection: `1.0000`
 
 ## Middle-Name and Sex-Aware Follow-Up (March 18, 2026)
 

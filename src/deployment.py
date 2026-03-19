@@ -23,7 +23,7 @@ DEFAULT_RUNTIME_DIR = Path("data/runtime")
 DEFAULT_MODEL_SPECS = {
     "siamese_bilstm": {
         "kind": "siamese",
-        "path": "models/experiments/hard_weight_tuning_bilstm_blended/both_pos0.50_neg0.25_blended_score/best_model.pth",
+        "path": "models/experiments/hard_weight_tuning_extended_midl_sex_aware_bilstm_blended/both_pos0.50_neg0.75_blended_score/best_model.pth",
     },
     "siamese_charcnn": {
         "kind": "siamese",
