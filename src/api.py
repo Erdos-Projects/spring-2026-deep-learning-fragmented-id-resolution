@@ -38,7 +38,8 @@ class DuplicateSearchRequest(BaseModel):
     blocking_mode: Optional[str] = Field(default=None, pattern="^(all|any)$")
     threshold: Optional[float] = None
     max_candidate_pairs: int = 250000
-    top_k: int = 50
+    top_k: int = 10
+    include_disagreement_analysis: bool = False
 
 
 class EntryCheckRequest(BaseModel):
@@ -74,11 +75,11 @@ def create_app(service: Optional[DuplicateDetectionService] = None) -> FastAPI:
         yield
 
     app = FastAPI(
-        title="NCVoters Duplicate Detection API",
+        title="Fragmented-ID-Resolution API",
         version="1.0.0",
         description=(
             "Upload a dataset, find likely duplicates inside it, or check a new record against it "
-            "using the trained Siamese models or TF-IDF baseline."
+            "using the deployed Siamese duplicate-detection model."
         ),
         lifespan=lifespan,
     )
@@ -95,7 +96,7 @@ def create_app(service: Optional[DuplicateDetectionService] = None) -> FastAPI:
     @app.get("/api/info")
     def api_info():
         return {
-            "service": "NCVoters Duplicate Detection API",
+            "service": "Fragmented-ID-Resolution API",
             "available_models": app.state.service.list_models(),
             "loaded_dataset": None
             if app.state.service.current_dataset is None
@@ -132,7 +133,7 @@ def create_app(service: Optional[DuplicateDetectionService] = None) -> FastAPI:
                 "duplicate_search": {
                     "blocking_keys": ["first_name", "last_name", "zip_code"],
                     "blocking_mode": "all",
-                    "top_k": 25,
+                    "top_k": 10,
                     "max_candidate_pairs": 250000,
                 },
                 "entry_check": {
@@ -195,6 +196,7 @@ def create_app(service: Optional[DuplicateDetectionService] = None) -> FastAPI:
                 threshold=request.threshold,
                 max_candidate_pairs=request.max_candidate_pairs,
                 top_k=request.top_k,
+                include_disagreement_analysis=request.include_disagreement_analysis,
             )
         except (DatasetNotLoadedError, ModelUnavailableError) as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc

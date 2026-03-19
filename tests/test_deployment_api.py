@@ -139,6 +139,10 @@ def test_api_upload_find_and_check_entry_with_tfidf():
         assert "duplicate_pattern_summary" in payload
         assert "representative_cases" in payload
         assert "disagreement_analysis" in payload
+        assert "exports" in payload
+        assert payload["disagreement_analysis"]["requested"] is False
+        assert payload["exports"]["duplicates"]
+        assert payload["exports"]["review"]
         assert any(
             {pair["id1"], pair["id2"]} == {"r1", "r2"} for pair in payload["high_confidence_duplicates"]
         )

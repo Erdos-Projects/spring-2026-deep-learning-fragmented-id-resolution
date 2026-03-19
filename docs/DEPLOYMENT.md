@@ -1,6 +1,6 @@
 # Deployment Guide
 
-This branch adds a simple serving layer around the trained models so the project can be demonstrated as a product.
+This branch adds a serving layer around the trained models so the project can be demonstrated as a product.
 
 ## Supported product flows
 
@@ -31,7 +31,16 @@ We also ran the same hard-example sweep for `siamese_charcnn`:
 - `models/experiments/hard_weight_tuning_charcnn_blended/tuning_summary.tsv`
 - `models/experiments/encoder_hard_weight_comparison.tsv`
 
-CharCNN remained available in the app as a comparison model, but it did not beat the tuned BiLSTM on the overall deployment tradeoff.
+CharCNN remained available through the API as a comparison model, but it did not beat the tuned BiLSTM on the overall deployment tradeoff.
+
+The user-facing web app is intentionally simpler than the API:
+
+- it defaults to the deployed Siamese product model
+- it does not expose model-selection controls to a naive user
+- it guides the user through three steps:
+  1. load a dataset
+  2. choose a task
+  3. run either a full duplicate scan or a single-record check
 
 ## Local run
 
@@ -83,7 +92,7 @@ curl "http://127.0.0.1:8000/dataset/summary"
 
 ## Find duplicates inside the loaded dataset
 
-This runs candidate generation through blocking and then scores candidate pairs with the selected model.
+This runs candidate generation through blocking and then scores candidate pairs with the deployed product model.
 
 ```powershell
 curl -X POST "http://127.0.0.1:8000/duplicates/find" `
@@ -109,13 +118,18 @@ The UI does not just dump raw pairs anymore. It now emphasizes:
 - borderline duplicates
 - near-miss non-duplicates
 - cluster summaries instead of every cluster
-- `Review recommended` disagreement cases between models
+- optional `Review recommended` disagreement cases between models
 
 For disagreement cases, each card shows:
 
 - record previews including `midl_name`
 - exact matching fields
 - exact differing fields
+
+The visible preview sections are capped at `10` rows each for presentation clarity, but the export buttons provide:
+
+- a duplicate CSV for the full predicted duplicate queue from the current run
+- a human-review CSV for near-threshold cases on either side of the threshold
 
 For full-database search, the app defaults to:
 
@@ -157,6 +171,8 @@ The response includes:
 - `matches`
 
 Each match reports the model score, duplicate decision, and the matched existing record excerpt.
+
+The product UI includes a `midl_name` field in this form because the current deployment checkpoint uses middle name as part of the learned representation.
 
 ## Runtime behavior
 

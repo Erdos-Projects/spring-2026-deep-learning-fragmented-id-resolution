@@ -71,6 +71,7 @@ PAIR_COMPARISON_FIELDS = [
     "race_desc",
     "ethnic_desc",
 ]
+REVIEW_EXPORT_LIMIT_PER_SIDE = 100
 
 
 class DeploymentError(RuntimeError):
@@ -1028,7 +1029,8 @@ class DuplicateDetectionService:
         blocking_mode: Optional[str] = None,
         threshold: Optional[float] = None,
         max_candidate_pairs: int = 250000,
-        top_k: int = 50,
+        top_k: int = 10,
+        include_disagreement_analysis: bool = False,
     ) -> Dict[str, Any]:
         runtime_dataset = self._require_dataset()
         model = self._resolve_model(model_name)
@@ -1091,6 +1093,24 @@ class DuplicateDetectionService:
             data_lookup=lookup,
             display_attributes=display_attributes,
         )
+        export_duplicate_pairs = _rows_to_pair_payloads(
+            duplicate_df,
+            data_lookup=lookup,
+            display_attributes=display_attributes,
+            cluster_membership=cluster_membership,
+        )
+        export_review_pairs = _rows_to_pair_payloads(
+            pd.concat(
+                [
+                    duplicate_df.sort_values("score", ascending=True).head(REVIEW_EXPORT_LIMIT_PER_SIDE),
+                    rejected_df.sort_values("score", ascending=False).head(REVIEW_EXPORT_LIMIT_PER_SIDE),
+                ],
+                ignore_index=True,
+            ),
+            data_lookup=lookup,
+            display_attributes=display_attributes,
+            cluster_membership=cluster_membership,
+        )
 
         representative_cases = {
             "highest_confidence_duplicate": high_confidence_duplicates[0] if high_confidence_duplicates else None,
@@ -1102,13 +1122,21 @@ class DuplicateDetectionService:
         disagreement_analysis: Dict[str, Any]
         comparison_model_name = self._choose_comparison_model_name(model_name)
         comparison_candidate_limit = 50000
-        if comparison_model_name is None:
+        if not include_disagreement_analysis:
             disagreement_analysis = {
+                "requested": False,
+                "available": False,
+                "reason": "Disagreement analysis was not requested for this search.",
+            }
+        elif comparison_model_name is None:
+            disagreement_analysis = {
+                "requested": True,
                 "available": False,
                 "reason": "No comparison model is configured for this deployment.",
             }
         elif len(results_df) > comparison_candidate_limit:
             disagreement_analysis = {
+                "requested": True,
                 "available": False,
                 "reason": (
                     f"Disagreement analysis skipped because {len(results_df)} candidate pairs exceed "
@@ -1127,6 +1155,7 @@ class DuplicateDetectionService:
                 display_attributes=list(dict.fromkeys(model.attributes + comparison_model.attributes)),
                 top_k=min(top_k, 10),
             )
+            disagreement_analysis["requested"] = True
 
         return {
             "model_name": model_name,
@@ -1145,6 +1174,10 @@ class DuplicateDetectionService:
             "duplicate_pattern_summary": summarize_duplicate_patterns(duplicate_df, lookup),
             "representative_cases": representative_cases,
             "disagreement_analysis": disagreement_analysis,
+            "exports": {
+                "duplicates": export_duplicate_pairs,
+                "review": export_review_pairs,
+            },
         }
 
     def check_entry(

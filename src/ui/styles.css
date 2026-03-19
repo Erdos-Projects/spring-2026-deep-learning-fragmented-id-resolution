@@ -152,7 +152,7 @@ body::before {
 
 .workspace {
   display: grid;
-  grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 24px;
 }
 
@@ -193,9 +193,30 @@ body::before {
 
 .field-stack,
 .mode-panel,
-.status-card {
+.status-card,
+.inline-status-card {
   display: grid;
   gap: 10px;
+}
+
+.inline-status-card {
+  margin-top: 20px;
+  padding: 18px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  background: rgba(35, 26, 18, 0.04);
+}
+
+.inline-status-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+}
+
+.inline-status-header h3 {
+  margin: 0;
+  font-size: 1.05rem;
 }
 
 .field-grid,
@@ -373,6 +394,19 @@ select:focus {
   margin-bottom: 14px;
 }
 
+.toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 6px;
+  font-weight: 600;
+}
+
+.toggle-row input {
+  width: auto;
+  margin: 0;
+}
+
 .checkbox-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -465,6 +499,12 @@ select:focus {
   border-radius: var(--radius-lg);
   background: rgba(255, 248, 238, 0.82);
   border: 1px solid var(--border);
+}
+
+.results-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
 }
 
 .stats-grid,

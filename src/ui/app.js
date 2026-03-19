@@ -7,6 +7,7 @@ const COMMON_BLOCKING_KEYS = [
   "street_name",
   "sex",
 ];
+const MAX_DISPLAY_ROWS = 10;
 
 const state = {
   models: [],
@@ -15,6 +16,7 @@ const state = {
   activeTask: "find",
   datasetMode: "path",
   defaults: null,
+  lastFindPayload: null,
 };
 
 function byId(id) {
@@ -64,50 +66,17 @@ function getSelectedModel() {
   return state.models.find((model) => model.name === state.selectedModel) || null;
 }
 
-function renderModelOptions() {
-  const select = byId("model-select");
-  select.innerHTML = "";
-  for (const model of state.models) {
-    const option = document.createElement("option");
-    option.value = model.name;
-    option.textContent = `${model.name} (${model.kind})`;
-    select.appendChild(option);
-  }
-  if (state.selectedModel) {
-    select.value = state.selectedModel;
-  }
-}
-
-function renderModelSummary() {
-  const model = getSelectedModel();
-  const summary = byId("model-summary");
-  if (!model) {
-    summary.innerHTML = "No models available.";
-    return;
-  }
-
-  summary.innerHTML = `
-    <table class="summary-table">
-      <tr><td>Model</td><td class="mono">${model.name}</td></tr>
-      <tr><td>Kind</td><td>${model.kind}</td></tr>
-      <tr><td>Default threshold</td><td>${Number(model.threshold).toFixed(3)}</td></tr>
-      <tr><td>Training-time blocking</td><td>${(model.blocking_keys || []).join(", ") || "none"}</td></tr>
-      <tr><td>Training-time mode</td><td>${model.blocking_mode || "any"}</td></tr>
-      <tr><td>Attributes</td><td>${(model.attributes || []).join(", ")}</td></tr>
-    </table>
-  `;
-
-  syncBlockingControlsFromModel();
-}
-
 function renderDatasetSummary() {
+  const card = byId("dataset-status-card");
   const target = byId("dataset-summary");
   byId("hero-dataset-status").textContent = state.dataset ? `${state.dataset.record_count} records` : "Not loaded";
   if (!state.dataset) {
-    target.innerHTML = "No dataset is loaded yet.";
+    card.classList.add("hidden");
+    target.innerHTML = "";
     return;
   }
 
+  card.classList.remove("hidden");
   target.innerHTML = `
     <table class="summary-table">
       <tr><td>Source</td><td class="mono">${state.dataset.source_name}</td></tr>
@@ -147,7 +116,7 @@ function syncBlockingControlsFromModel() {
   const findDefaults = state.defaults?.duplicate_search || {
     blocking_keys: ["first_name", "last_name", "zip_code"],
     blocking_mode: "all",
-    top_k: 25,
+    top_k: 10,
     max_candidate_pairs: 250000,
   };
   const checkDefaults = state.defaults?.entry_check || {
@@ -161,10 +130,101 @@ function syncBlockingControlsFromModel() {
   renderBlockingCheckboxes("check-blocking-checkboxes", checkDefaults.blocking_keys || []);
   byId("find-blocking-mode").value = findDefaults.blocking_mode || "all";
   byId("check-blocking-mode").value = checkDefaults.blocking_mode || "any";
-  byId("find-top-k-input").value = String(findDefaults.top_k || 25);
-  byId("check-top-k-input").value = String(checkDefaults.top_k || 10);
   byId("find-max-candidates-input").value = String(findDefaults.max_candidate_pairs || 250000);
   byId("check-max-candidates-input").value = String(checkDefaults.max_candidates || 50000);
+}
+
+function clampRows(rows = [], maxRows = MAX_DISPLAY_ROWS) {
+  return rows.slice(0, maxRows);
+}
+
+function dedupePairs(rows = []) {
+  const seen = new Set();
+  const uniqueRows = [];
+  for (const row of rows) {
+    const key = [row.id1, row.id2].sort().join("::");
+    if (!seen.has(key)) {
+      seen.add(key);
+      uniqueRows.push(row);
+    }
+  }
+  return uniqueRows;
+}
+
+function escapeCsv(value) {
+  const text = String(value ?? "");
+  if (text.includes(",") || text.includes("\"") || text.includes("\n")) {
+    return `"${text.replace(/"/g, "\"\"")}"`;
+  }
+  return text;
+}
+
+function pairRowsToCsv(rows = [], sectionName) {
+  const headers = [
+    "section",
+    "id1",
+    "id2",
+    "score",
+    "comparison_model",
+    "comparison_score",
+    "signals",
+    "matching_fields",
+    "differing_fields",
+    "record1_name",
+    "record1_address",
+    "record1_zip",
+    "record1_age",
+    "record1_sex",
+    "record2_name",
+    "record2_address",
+    "record2_zip",
+    "record2_age",
+    "record2_sex",
+  ];
+  const lines = [headers.join(",")];
+  for (const pair of rows) {
+    const record1Name = [pair.record1?.first_name, pair.record1?.midl_name, pair.record1?.last_name].filter(Boolean).join(" ");
+    const record2Name = [pair.record2?.first_name, pair.record2?.midl_name, pair.record2?.last_name].filter(Boolean).join(" ");
+    const record1Address = [pair.record1?.house_num, pair.record1?.street_name].filter(Boolean).join(" ");
+    const record2Address = [pair.record2?.house_num, pair.record2?.street_name].filter(Boolean).join(" ");
+    const matchingFields = (pair.matching_fields || []).map((field) => `${field.label}: ${field.value}`).join(" | ");
+    const differingFields = (pair.differing_fields || []).map((field) => `${field.label}: ${field.left || "<blank>"} -> ${field.right || "<blank>"}`).join(" | ");
+    const row = [
+      sectionName,
+      pair.id1,
+      pair.id2,
+      formatScore(pair.score),
+      pair.comparison_model_name || "",
+      pair.comparison_score !== undefined ? formatScore(pair.comparison_score) : "",
+      (pair.signals || []).join(" | "),
+      matchingFields,
+      differingFields,
+      record1Name,
+      record1Address,
+      pair.record1?.zip_code || "",
+      pair.record1?.age || "",
+      pair.record1?.sex || "",
+      record2Name,
+      record2Address,
+      pair.record2?.zip_code || "",
+      pair.record2?.age || "",
+      pair.record2?.sex || "",
+    ];
+    lines.push(row.map(escapeCsv).join(","));
+  }
+  return lines.join("\n");
+}
+
+function downloadCsv(filename, content) {
+  const blob = new Blob([content], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
 }
 
 function setTask(taskName) {
@@ -247,6 +307,7 @@ function renderFieldDiffs(pair) {
 }
 
 function renderPairSection(title, subtitle, rows = [], options = {}) {
+  const displayRows = clampRows(rows);
   const reviewNote = options.reviewRecommended
     ? `
       <div class="review-note">
@@ -258,7 +319,7 @@ function renderPairSection(title, subtitle, rows = [], options = {}) {
   return `
     <div class="result-block">
       <h3>${title}</h3>
-      <p class="section-text">${subtitle}</p>
+      <p class="section-text">${subtitle} Showing up to ${MAX_DISPLAY_ROWS} rows.</p>
       ${reviewNote}
       <table class="results-table">
         <thead>
@@ -269,7 +330,7 @@ function renderPairSection(title, subtitle, rows = [], options = {}) {
           </tr>
         </thead>
         <tbody>
-          ${rows.length ? rows.map((pair) => `
+          ${displayRows.length ? displayRows.map((pair) => `
             <tr>
               <td class="mono">${pair.id1} / ${pair.id2}</td>
               <td>
@@ -298,11 +359,11 @@ function renderScoreSummary(scoreSummary, clusterSummary, payload) {
   return `
     <div class="result-block">
       <div class="badge-row">
-        <span class="badge">Model: ${payload.model_name}</span>
         <span class="badge">Threshold: ${formatScore(payload.threshold)}</span>
         <span class="badge">Candidates: ${payload.candidate_pair_count}</span>
         <span class="badge">Duplicates: ${payload.predicted_duplicate_pair_count}</span>
         <span class="badge">Clusters: ${clusterSummary.total_cluster_count || 0}</span>
+        <span class="badge">Preview capped at ${MAX_DISPLAY_ROWS}</span>
       </div>
       <div class="stats-grid">
         <div class="stat-card">
@@ -324,6 +385,38 @@ function renderScoreSummary(scoreSummary, clusterSummary, payload) {
           <strong>${clusterSummary.two_record_cluster_count || 0} pairs / ${clusterSummary.three_plus_record_cluster_count || 0} larger clusters</strong>
           <span class="hint-text">Largest cluster ${clusterSummary.largest_cluster_size || 0} records</span>
         </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderResultActions(payload) {
+  const duplicateRows = dedupePairs(payload.exports?.duplicates || []);
+  const reviewRows = dedupePairs(payload.exports?.review || []);
+
+  return `
+    <div class="result-block">
+      <h3>Export Results</h3>
+      <p class="section-text">
+        Download the full duplicate queue or the human-review queue built from cases closest to the decision threshold.
+      </p>
+      <div class="results-toolbar">
+        <button
+          class="ghost-button"
+          type="button"
+          data-export-kind="duplicates"
+          ${duplicateRows.length ? "" : "disabled"}
+        >
+          Export duplicates CSV
+        </button>
+        <button
+          class="ghost-button"
+          type="button"
+          data-export-kind="review"
+          ${reviewRows.length ? "" : "disabled"}
+        >
+          Export human-review CSV
+        </button>
       </div>
     </div>
   `;
@@ -487,6 +580,7 @@ function renderFindResults(payload) {
   root.innerHTML = `
     <div class="results-stack">
       ${renderScoreSummary(payload.score_summary, clusterSummary, payload)}
+      ${renderResultActions(payload)}
       ${renderPairSection(
         "High-confidence duplicates",
         "The strongest predicted duplicates in this search run.",
@@ -505,7 +599,7 @@ function renderFindResults(payload) {
       ${renderRepresentativeCases(payload.representative_cases || {})}
       ${renderPatternSummary(payload.duplicate_pattern_summary || [])}
       ${renderClusterSummary(clusterSummary)}
-      ${renderDisagreementSection(payload.disagreement_analysis)}
+      ${payload.disagreement_analysis?.requested ? renderDisagreementSection(payload.disagreement_analysis) : ""}
     </div>
   `;
 }
@@ -518,12 +612,12 @@ function renderCheckResults(payload) {
     <div class="results-stack">
       <div class="result-block">
         <div class="badge-row">
-          <span class="badge">Model: ${payload.model_name}</span>
           <span class="badge">Threshold: ${Number(payload.threshold).toFixed(3)}</span>
           <span class="badge ${payload.duplicate_exists ? "warning" : ""}">
             Duplicate exists: ${payload.duplicate_exists ? "Yes" : "No"}
           </span>
           <span class="badge">Candidates: ${payload.candidate_count}</span>
+          <span class="badge">Preview capped at ${MAX_DISPLAY_ROWS}</span>
         </div>
         <p><strong>Submitted entry:</strong> ${Object.entries(payload.entry)
           .filter(([, value]) => value)
@@ -533,7 +627,7 @@ function renderCheckResults(payload) {
       <div class="result-block">
         <h3>Top matches</h3>
         <div class="match-list">
-          ${matches.length ? matches.map((match) => `
+          ${clampRows(matches).length ? clampRows(matches).map((match) => `
             <div class="match-card">
               <div class="badge-row">
                 <span class="badge mono">${match.existing_id}</span>
@@ -542,11 +636,7 @@ function renderCheckResults(payload) {
                   ${match.is_duplicate ? "Predicted duplicate" : "Below threshold"}
                 </span>
               </div>
-              <div>
-                <strong>${match.existing_record.first_name || ""} ${match.existing_record.last_name || ""}</strong>,
-                ${match.existing_record.house_num || ""} ${match.existing_record.street_name || ""},
-                ${match.existing_record.zip_code || ""}
-              </div>
+              <div>${recordPreview(match.existing_record)}</div>
             </div>
           `).join("") : "No candidate matches were produced for the current entry and blocking settings."}
         </div>
@@ -561,11 +651,8 @@ async function refreshAppState(showInfo = false) {
   state.dataset = payload.dataset;
   state.defaults = payload.defaults || null;
   state.selectedModel = state.selectedModel || chooseDefaultModel(state.models, payload.defaults?.preferred_model);
-
-  byId("hero-model-count").textContent = String(state.models.length);
-  renderModelOptions();
-  renderModelSummary();
   renderDatasetSummary();
+  syncBlockingControlsFromModel();
 
   if (showInfo) {
     showBanner(state.dataset ? "Dataset loaded successfully." : "Application state refreshed.");
@@ -584,7 +671,9 @@ async function loadDatasetFromPath() {
     body: JSON.stringify({ path }),
   });
   state.dataset = payload.dataset;
+  state.lastFindPayload = null;
   renderDatasetSummary();
+  byId("results-root").innerHTML = "Dataset loaded. Choose a task to begin review.";
   showBanner(`Dataset loaded from ${payload.dataset.source_name}.`);
 }
 
@@ -602,13 +691,16 @@ async function uploadDataset() {
     body: formData,
   });
   state.dataset = payload.dataset;
+  state.lastFindPayload = null;
   renderDatasetSummary();
+  byId("results-root").innerHTML = "Dataset loaded. Choose a task to begin review.";
   showBanner(`Dataset uploaded: ${payload.dataset.source_name}.`);
 }
 
 async function clearDataset() {
   await fetchJson("/dataset", { method: "DELETE" });
   state.dataset = null;
+  state.lastFindPayload = null;
   renderDatasetSummary();
   byId("results-root").innerHTML = "Dataset cleared. Load another dataset to continue.";
   showBanner("Loaded dataset cleared.");
@@ -634,10 +726,12 @@ async function runFindDuplicates() {
       blocking_keys: selectedBlockingKeys,
       blocking_mode: byId("find-blocking-mode").value,
       threshold: thresholdRaw ? Number(thresholdRaw) : null,
-      top_k: Number(byId("find-top-k-input").value) || 25,
+      top_k: MAX_DISPLAY_ROWS,
       max_candidate_pairs: Number(byId("find-max-candidates-input").value) || 250000,
+      include_disagreement_analysis: byId("find-include-disagreement").checked,
     }),
   });
+  state.lastFindPayload = payload;
   renderFindResults(payload);
   showBanner("Duplicate search completed.");
 }
@@ -651,6 +745,7 @@ async function runCheckEntry() {
   const thresholdRaw = byId("check-threshold-input").value.trim();
   const entry = {
     first_name: byId("entry-first-name").value,
+    midl_name: byId("entry-midl-name").value,
     last_name: byId("entry-last-name").value,
     house_num: byId("entry-house-num").value,
     street_name: byId("entry-street-name").value,
@@ -670,7 +765,7 @@ async function runCheckEntry() {
       blocking_keys: getCheckedValues("check-blocking-checkboxes"),
       blocking_mode: byId("check-blocking-mode").value,
       threshold: thresholdRaw ? Number(thresholdRaw) : null,
-      top_k: Number(byId("check-top-k-input").value) || 10,
+      top_k: MAX_DISPLAY_ROWS,
       max_candidates: Number(byId("check-max-candidates-input").value) || 50000,
     }),
   });
@@ -679,12 +774,6 @@ async function runCheckEntry() {
 }
 
 function wireEvents() {
-  byId("model-select").addEventListener("change", (event) => {
-    state.selectedModel = event.target.value;
-    renderModelSummary();
-    hideBanner();
-  });
-
   for (const button of document.querySelectorAll("#dataset-mode-toggle .segmented-option")) {
     button.addEventListener("click", () => setDatasetMode(button.dataset.mode));
   }
@@ -737,6 +826,34 @@ function wireEvents() {
       await runCheckEntry();
     } catch (error) {
       showBanner(formatErrorMessage(error.message), "error");
+    }
+  });
+
+  byId("results-root").addEventListener("click", (event) => {
+    const button = event.target.closest("[data-export-kind]");
+    if (!button || !state.lastFindPayload) {
+      return;
+    }
+
+    const kind = button.dataset.exportKind;
+    const exportsPayload = state.lastFindPayload.exports || {};
+    if (kind === "duplicates") {
+      const rows = dedupePairs(exportsPayload.duplicates || []);
+      if (!rows.length) {
+        showBanner("There are no duplicate rows available to export for this run.", "error");
+        return;
+      }
+      downloadCsv("duplicates_found.csv", pairRowsToCsv(rows, "duplicates"));
+      return;
+    }
+
+    if (kind === "review") {
+      const rows = dedupePairs(exportsPayload.review || []);
+      if (!rows.length) {
+        showBanner("There are no human-review rows available to export for this run.", "error");
+        return;
+      }
+      downloadCsv("human_review_queue.csv", pairRowsToCsv(rows, "human_review"));
     }
   });
 }

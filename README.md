@@ -515,11 +515,21 @@ Supported flows:
 1. Upload a CSV/TSV dataset and find likely duplicates inside it.
 2. Load a dataset once and check a new incoming record against it.
 
-The user-facing app also includes model-review tooling:
+The user-facing app now behaves like a product flow rather than an experiment dashboard:
+
+- Step 1: load a dataset
+- Step 2: choose a task
+- Step 3A: run a full duplicate scan
+- Step 3B: check one incoming record
+- the app uses the deployed Siamese model by default and hides backend-facing model controls from the main UI
+
+The review-oriented result panels include:
 
 - disagreement sections are labeled as `Review recommended`
 - disagreement cards show exact matching fields and exact differing fields
 - record previews include `midl_name` when present so surname-expansion and middle-name cases are visible in the UI
+- preview sections are capped at `10` rows each for presentation clarity
+- export buttons provide a duplicate CSV and a human-review CSV for the current run
 
 Start the API:
 
