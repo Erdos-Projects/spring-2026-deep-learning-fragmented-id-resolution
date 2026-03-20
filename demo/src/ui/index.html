@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fragmented-ID-Resolution</title>
+  <link rel="stylesheet" href="/assets/styles.css">
+</head>
+<body>
+  <div class="page-shell">
+    <header class="hero">
+      <div class="hero-copy">
+        <p class="eyebrow">Fragmented-ID-Resolution</p>
+        <h1>Fragmented-ID-Resolution for Voter Registration Records</h1>
+        <p class="hero-text">
+          This product uses our tuned Siamese duplicate-detection model to scan voter-registration datasets for likely
+          duplicates and to help a clerk check whether one incoming registration already exists in the loaded database.
+        </p>
+        <ol class="hero-steps">
+          <li>Load a voter-registration dataset by path or file upload.</li>
+          <li>Choose whether you want a full duplicate scan or a single-record check.</li>
+          <li>Review flagged duplicates, borderline cases, and the human-review queue.</li>
+        </ol>
+      </div>
+      <div class="hero-panel">
+        <div class="mini-stat">
+          <span class="mini-label">Current dataset</span>
+          <strong id="hero-dataset-status">Not loaded</strong>
+        </div>
+        <div class="mini-stat">
+          <span class="mini-label">Product modes</span>
+          <strong>Bulk scan and clerk check</strong>
+        </div>
+        <div class="hero-links">
+          <a href="/docs" target="_blank" rel="noreferrer">Open API Docs</a>
+        </div>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <section class="main-column">
+        <section class="panel">
+          <div class="panel-header">
+            <p class="step-tag">Step 1</p>
+            <h2>Load a Dataset</h2>
+          </div>
+          <div class="segmented-control" id="dataset-mode-toggle">
+            <button class="segmented-option active" data-mode="path" type="button">Use File Path</button>
+            <button class="segmented-option" data-mode="upload" type="button">Upload File</button>
+          </div>
+
+          <div id="dataset-path-panel" class="mode-panel active">
+            <label for="dataset-path-input">Dataset path on this machine</label>
+            <div class="inline-form">
+              <input
+                id="dataset-path-input"
+                type="text"
+                placeholder="C:/.../ncvoters_prepared.tsv"
+                value="data/processed/ncvoters_prepared.tsv"
+              >
+              <button id="load-path-button" class="primary-button" type="button">Load Dataset</button>
+            </div>
+            <p class="hint-text">Use forward slashes on Windows to avoid escaping issues.</p>
+          </div>
+
+          <div id="dataset-upload-panel" class="mode-panel">
+            <label for="dataset-file-input">Choose a TSV or CSV file</label>
+            <div class="inline-form upload-form">
+              <input id="dataset-file-input" type="file" accept=".tsv,.csv,text/tab-separated-values,text/csv">
+              <button id="upload-dataset-button" class="primary-button" type="button">Upload Dataset</button>
+            </div>
+          </div>
+
+          <div id="dataset-status-card" class="inline-status-card hidden">
+            <div class="inline-status-header">
+              <h3>Dataset Status</h3>
+              <button id="clear-dataset-button" class="ghost-button" type="button">Clear Dataset</button>
+            </div>
+            <div id="dataset-summary" class="empty-state"></div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-header">
+            <p class="step-tag">Step 2</p>
+            <h2>Choose the Task</h2>
+          </div>
+          <div class="task-grid" id="task-toggle">
+            <button class="task-card active" data-task="find" type="button">
+              <span class="task-title">Find duplicates in the database</span>
+              <span class="task-text">Run candidate generation and score likely duplicate pairs across the loaded dataset.</span>
+            </button>
+            <button class="task-card" data-task="check" type="button">
+              <span class="task-title">Check one new incoming record</span>
+              <span class="task-text">Compare one registration attempt against the currently loaded dataset.</span>
+            </button>
+          </div>
+        </section>
+
+        <section class="panel" id="find-task-panel">
+          <div class="panel-header">
+            <p class="step-tag">Step 3A</p>
+            <h2>Duplicate Search</h2>
+          </div>
+          <p class="hint-text">
+            Recommended for a full database scan: <span class="mono">first_name + last_name + zip_code</span> with
+            <span class="mono">all</span> matching. Looser settings can create too many candidate pairs.
+          </p>
+          <details class="advanced-panel">
+            <summary>Advanced blocking options</summary>
+            <div class="field-stack">
+              <span class="field-label">Blocking keys</span>
+              <div id="find-blocking-checkboxes" class="checkbox-grid"></div>
+            </div>
+            <div class="field-stack">
+              <label for="find-blocking-mode">Blocking mode</label>
+              <select id="find-blocking-mode">
+                <option value="any">Any selected field may match</option>
+                <option value="all">All selected fields must match</option>
+              </select>
+            </div>
+            <div class="field-stack">
+              <label for="find-max-candidates-input">Candidate pair limit</label>
+              <input id="find-max-candidates-input" type="number" min="1000" step="1000" value="250000">
+            </div>
+            <div class="field-stack">
+              <label for="find-threshold-input">Override threshold (optional)</label>
+              <input id="find-threshold-input" type="number" step="0.01" placeholder="Leave blank to use product default">
+            </div>
+            <label class="toggle-row" for="find-include-disagreement">
+              <input id="find-include-disagreement" type="checkbox">
+              <span>Include disagreement analysis against the comparison model</span>
+            </label>
+          </details>
+          <button id="run-find-button" class="primary-button wide-button" type="button">Find Duplicates</button>
+        </section>
+
+        <section class="panel hidden" id="check-task-panel">
+          <div class="panel-header">
+            <p class="step-tag">Step 3B</p>
+            <h2>New Entry Check</h2>
+          </div>
+          <div class="entry-form-grid">
+            <div class="field-stack">
+              <label for="entry-first-name">First name</label>
+              <input id="entry-first-name" type="text">
+            </div>
+            <div class="field-stack">
+              <label for="entry-midl-name">Middle name</label>
+              <input id="entry-midl-name" type="text">
+            </div>
+            <div class="field-stack">
+              <label for="entry-last-name">Last name</label>
+              <input id="entry-last-name" type="text">
+            </div>
+            <div class="field-stack">
+              <label for="entry-house-num">House number</label>
+              <input id="entry-house-num" type="text">
+            </div>
+            <div class="field-stack">
+              <label for="entry-street-name">Street name</label>
+              <input id="entry-street-name" type="text">
+            </div>
+            <div class="field-stack">
+              <label for="entry-zip-code">ZIP code</label>
+              <input id="entry-zip-code" type="text">
+            </div>
+            <div class="field-stack">
+              <label for="entry-age">Age</label>
+              <input id="entry-age" type="text">
+            </div>
+            <div class="field-stack">
+              <label for="entry-sex">Sex</label>
+              <input id="entry-sex" type="text">
+            </div>
+            <div class="field-stack">
+              <label for="entry-race">Race description</label>
+              <input id="entry-race" type="text">
+            </div>
+            <div class="field-stack">
+              <label for="entry-ethnic">Ethnic description</label>
+              <input id="entry-ethnic" type="text">
+            </div>
+          </div>
+          <details class="advanced-panel">
+            <summary>Advanced blocking options</summary>
+            <div class="field-stack">
+              <span class="field-label">Blocking keys</span>
+              <div id="check-blocking-checkboxes" class="checkbox-grid"></div>
+            </div>
+            <div class="field-stack">
+              <label for="check-blocking-mode">Blocking mode</label>
+              <select id="check-blocking-mode">
+                <option value="any">Any selected field may match</option>
+                <option value="all">All selected fields must match</option>
+              </select>
+            </div>
+            <div class="field-stack">
+              <label for="check-max-candidates-input">Candidate record limit</label>
+              <input id="check-max-candidates-input" type="number" min="100" step="100" value="50000">
+            </div>
+            <div class="field-stack">
+              <label for="check-threshold-input">Override threshold (optional)</label>
+              <input id="check-threshold-input" type="number" step="0.01" placeholder="Leave blank to use product default">
+            </div>
+          </details>
+          <button id="run-check-button" class="primary-button wide-button" type="button">Check New Entry</button>
+        </section>
+
+        <section class="panel result-panel">
+          <div class="panel-header">
+            <p class="step-tag">Results</p>
+            <h2>Output</h2>
+          </div>
+          <div id="message-banner" class="message-banner hidden"></div>
+          <div id="results-root" class="empty-state">
+            Load a dataset and run one of the product tasks to see results here.
+          </div>
+        </section>
+      </section>
+    </main>
+  </div>
+
+  <script src="/assets/app.js"></script>
+</body>
+</html>

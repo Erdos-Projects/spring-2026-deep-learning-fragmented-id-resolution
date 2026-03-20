@@ -235,6 +235,48 @@ This starts the app and:
 - auto-loads `data/processed/ncvoters_prepared.tsv`
 - persists the review database and runtime dataset state in a named Docker volume
 
+## Portable demo bundle
+
+This branch now includes a self-contained `demo/` folder.
+
+Why:
+
+- `main` can continue to hold notebooks and exploratory work
+- `demo/` acts as the clean showroom version of the product
+- the demo can be copied into `main` without merging the entire `Deployment` branch structure
+
+What is inside `demo/`:
+
+- the deployment API
+- the product UI
+- the SQLite-backed review workflow
+- the deployed Siamese checkpoint
+- the TF-IDF comparison config used for optional disagreement analysis
+- the prepared NCVoters dataset used for default preload
+- its own `Dockerfile` and `docker-compose.yml`
+
+To refresh `demo/` from the current Deployment branch state:
+
+```powershell
+python scripts/sync_demo_bundle.py
+```
+
+Then the demo can be run independently:
+
+```powershell
+cd demo
+docker compose up --build
+```
+
+Or without Docker:
+
+```powershell
+cd demo
+uvicorn src.api:app --reload --host 0.0.0.0 --port 8000
+```
+
+If the UI changes later in `Deployment`, rerun the sync script and update only the `demo/` folder in `main`.
+
 You can still use the plain Docker commands if you prefer:
 
 Build:

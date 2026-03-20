@@ -561,6 +561,17 @@ Detailed usage examples:
 
 - `docs/DEPLOYMENT.md`
 
+Portable demo bundle:
+
+- `demo/`
+- this is a self-contained snapshot of the product UI, API, model artifacts, and default dataset
+- it is meant to be copied into `main` without merging the entire `Deployment` branch structure
+- refresh it after deployment/UI changes with:
+
+```bash
+python scripts/sync_demo_bundle.py
+```
+
 One-command local demo:
 
 ```bash
