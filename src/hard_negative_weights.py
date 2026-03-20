@@ -1,12 +1,4 @@
-"""
-Hard Negative Weighting Module (Cosine Similarity-based)
 
-Standalone module that computes sample weights for hard negatives.
-Use this AFTER loading data, BEFORE training.
-
-Flow: 
-    data load → compute_hard_negative_weights() → training → evaluation
-"""
 
 import pandas as pd
 import numpy as np
@@ -166,22 +158,6 @@ def compute_hard_negative_weights(data: pd.DataFrame,
     """
     Compute sample weights for hard negative training.
     
-    This is the main function you'll use in your training pipeline:
-    
-    Example:
-        # Load data
-        train_df = pd.read_csv('data/train_pairs_aug.csv')
-        
-        # Compute weights (SEPARATE STEP)
-        weights = compute_hard_negative_weights(
-            train_df, 
-            hard_negative_weight=2.5,  # Hyperparameter to tune!
-            similarity_threshold=0.7
-        )
-        
-        # Now use weights in training
-        # (You'll pass this to your training loop)
-    
     Args:
         data: DataFrame with pair data
         hard_negative_weight: Weight multiplier for hard negatives (HYPERPARAMETER)
@@ -244,10 +220,6 @@ def save_hard_negative_analysis(data: pd.DataFrame, is_hard_negative: np.ndarray
     return hard_neg_df
 
 
-# ============================================================================
-# EXAMPLE USAGE
-# ============================================================================
-
 if __name__ == '__main__':
     """
     Example: How to use this module in your training pipeline
@@ -265,34 +237,7 @@ if __name__ == '__main__':
         similarity_threshold=0.7    # HYPERPARAMETER - try 0.6, 0.7, 0.8
     )
     
-    # Output:
-    # ============================================================
-    # COMPUTING HARD NEGATIVE WEIGHTS
-    # ============================================================
-    # Hard negative weight: 2.0x
-    # Similarity threshold: 0.7
-    #   Computing name similarities (n=45000 non-duplicates)...
-    # 
-    #   Hard Negative Buckets:
-    #     same_first_and_age_diff_last: 850
-    #     same_address_diff_age_or_sex: 340
-    #     ...
-    # 
-    # ============================================================
-    # SUMMARY
-    # ============================================================
-    # Total samples: 50,000
-    #   Duplicates (label=1): 5,000 (10.0%)
-    #   Non-duplicates (label=0): 45,000 (90.0%)
-    #   Hard negatives: 1,625 (3.2%)
-    # 
-    # Weight distribution:
-    #   Regular samples: 48,375 with weight 1.0x
-    #   Hard negatives: 1,625 with weight 2.0x
-    # ============================================================
-    
-    # 3. Now use weights in your training loop
-    # (You'll modify train_epoch to accept and apply these weights)
+   
     print(f"\nWeights shape: {weights.shape}")
     print(f"Weights dtype: {weights.dtype}")
     print(f"Ready to pass to training loop!")
