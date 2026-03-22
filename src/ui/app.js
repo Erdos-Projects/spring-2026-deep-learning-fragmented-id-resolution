@@ -20,6 +20,8 @@ const state = {
   reviewSummary: null,
   recentReviews: [],
   reviewQueueMode: "pending",
+  recentReviewLimit: 10,
+  deeperAnalysisExpanded: false,
 };
 
 function byId(id) {
@@ -397,8 +399,8 @@ function renderThresholdDecision(pair, threshold) {
     <div class="badge-row">
       <span class="badge ${acceptedByModel ? "success" : "warning"}">
         ${acceptedByModel
-          ? "Model accepted this as a duplicate, but it is close to the threshold"
-          : "Model rejected this as a duplicate, but it is close to the threshold"}
+      ? "Model accepted this as a duplicate, but it is close to the threshold"
+      : "Model rejected this as a duplicate, but it is close to the threshold"}
       </span>
     </div>
   `;
@@ -455,37 +457,53 @@ function renderPairSection(title, subtitle, rows = [], options = {}) {
   `;
 }
 
-function renderScoreSummary(scoreSummary, clusterSummary, payload) {
-  const duplicateScores = scoreSummary?.duplicates || {};
-  const rejectedScores = scoreSummary?.rejected || {};
+function renderOverviewSummary(payload, clusterSummary, reviewQueueState, reviewSummary) {
+  const scoreSummary = payload.score_summary || {};
+  const reviewCandidateCount = reviewQueueState.allRows.length;
+  const duplicateSideReviewCount = reviewQueueState.allRows.filter(
+    (pair) => Number(pair.score) >= Number(payload.threshold)
+  ).length;
+  const automaticMergeCount = Math.max(payload.predicted_duplicate_pair_count - duplicateSideReviewCount, 0);
+
   return `
     <div class="result-block">
+      <h3>Summary</h3>
+      <p class="section-text">
+        Overview of the current duplicate-search run, including the strongest automatic-merge candidates and the queue
+        of near-threshold cases that need human review.
+      </p>
       <div class="badge-row">
         <span class="badge">Threshold: ${formatScore(payload.threshold)}</span>
-        <span class="badge">Candidates: ${payload.candidate_pair_count}</span>
-        <span class="badge">Duplicates: ${payload.predicted_duplicate_pair_count}</span>
-        <span class="badge">Clusters: ${clusterSummary.total_cluster_count || 0}</span>
         <span class="badge">Preview capped at ${MAX_DISPLAY_ROWS}</span>
       </div>
       <div class="stats-grid">
         <div class="stat-card">
-          <span class="mini-label">Acceptance rate</span>
-          <strong>${formatScore((scoreSummary?.acceptance_rate || 0) * 100)}%</strong>
+          <span class="mini-label">Candidate pairs</span>
+          <strong>${payload.candidate_pair_count}</strong>
         </div>
         <div class="stat-card">
-          <span class="mini-label">Duplicate score range</span>
-          <strong>${formatScore(duplicateScores.min)} to ${formatScore(duplicateScores.max)}</strong>
-          <span class="hint-text">Median ${formatScore(duplicateScores.median)}</span>
+          <span class="mini-label">Predicted duplicates</span>
+          <strong>${payload.predicted_duplicate_pair_count}</strong>
         </div>
         <div class="stat-card">
-          <span class="mini-label">Rejected score range</span>
-          <strong>${formatScore(rejectedScores.min)} to ${formatScore(rejectedScores.max)}</strong>
-          <span class="hint-text">Median ${formatScore(rejectedScores.median)}</span>
+          <span class="mini-label">Automatic merge candidates</span>
+          <strong>${automaticMergeCount}</strong>
+          <span class="hint-text">Predicted duplicates outside the near-threshold review queue.</span>
         </div>
         <div class="stat-card">
-          <span class="mini-label">Cluster sizes</span>
-          <strong>${clusterSummary.two_record_cluster_count || 0} pairs / ${clusterSummary.three_plus_record_cluster_count || 0} larger clusters</strong>
-          <span class="hint-text">Largest cluster ${clusterSummary.largest_cluster_size || 0} records</span>
+          <span class="mini-label">Human-review candidates</span>
+          <strong>${reviewCandidateCount}</strong>
+          <span class="hint-text">Near-threshold pairs on either side of the decision boundary.</span>
+        </div>
+        <div class="stat-card">
+          <span class="mini-label">Reviewed so far</span>
+          <strong>${reviewQueueState.reviewedRows.length}</strong>
+          <span class="hint-text">${reviewSummary.total || 0} saved decisions for this dataset.</span>
+        </div>
+        <div class="stat-card">
+          <span class="mini-label">Predicted clusters</span>
+          <strong>${clusterSummary.total_cluster_count || 0}</strong>
+          <span class="hint-text">Largest cluster ${clusterSummary.largest_cluster_size || 0} records.</span>
         </div>
       </div>
     </div>
@@ -547,30 +565,30 @@ function renderReviewWorkflow(payload) {
   };
   const reviewQueueState = buildReviewQueue(payload);
   const reviewQueue = reviewQueueState.visibleRows;
-  const recentReviews = payload.recent_reviews || state.recentReviews || [];
+  const recentReviews = state.recentReviews || payload.recent_reviews || [];
 
   return `
     <div class="result-block">
-      <h3>Human review workflow</h3>
+      <h3>Human review</h3>
       <p class="section-text">
         These are the cases closest to the duplicate threshold. Review them before merging records into one person.
       </p>
       <div class="stats-grid">
         <div class="stat-card">
-          <span class="mini-label">Saved decisions</span>
-          <strong>${summary.total || 0}</strong>
+          <span class="mini-label">Pending in queue</span>
+          <strong>${reviewQueueState.pendingRows.length}</strong>
+        </div>
+        <div class="stat-card">
+          <span class="mini-label">Already reviewed in queue</span>
+          <strong>${reviewQueueState.reviewedRows.length}</strong>
         </div>
         <div class="stat-card">
           <span class="mini-label">Accepted duplicate</span>
           <strong>${summary.accepted_duplicate_count || 0}</strong>
         </div>
         <div class="stat-card">
-          <span class="mini-label">Rejected duplicate</span>
-          <strong>${summary.rejected_duplicate_count || 0}</strong>
-        </div>
-        <div class="stat-card">
-          <span class="mini-label">Marked uncertain</span>
-          <strong>${summary.uncertain_count || 0}</strong>
+          <span class="mini-label">Rejected / uncertain</span>
+          <strong>${(summary.rejected_duplicate_count || 0) + (summary.uncertain_count || 0)}</strong>
         </div>
       </div>
       <div class="results-toolbar">
@@ -590,21 +608,27 @@ function renderReviewWorkflow(payload) {
             Show all (${reviewQueueState.allRows.length})
           </button>
         </div>
+        <button type="button" class="ghost-button" data-reset-reviews>
+          Reset review decisions for this dataset
+        </button>
         <span class="hint-text">
           ${reviewQueueState.reviewedRows.length} already reviewed in this run.
         </span>
       </div>
     </div>
     ${renderPairSection(
-      "Human review queue",
-      state.reviewQueueMode === "pending"
-        ? `Near-threshold pairs that still need a human decision. The queue auto-fills with the next pending cases from this run.`
-        : `Near-threshold pairs from this run, including cases you have already reviewed.`,
-      reviewQueue,
-      { reviewActions: true, sourceSection: "review_queue", threshold: payload.threshold }
-    )}
+    "Human review queue",
+    state.reviewQueueMode === "pending"
+      ? `Near-threshold pairs that still need a human decision. The queue auto-fills with the next pending cases from this run.`
+      : `Near-threshold pairs from this run, including cases you have already reviewed.`,
+    reviewQueue,
+    { reviewActions: true, sourceSection: "review_queue", threshold: payload.threshold }
+  )}
     <div class="result-block">
       <h3>Recent review decisions</h3>
+      <p class="section-text">
+        Showing the most recent ${recentReviews.length} saved review decisions for the currently loaded dataset.
+      </p>
       <div class="match-list">
         ${recentReviews.length ? recentReviews.map((review) => `
           <div class="match-card">
@@ -615,8 +639,42 @@ function renderReviewWorkflow(payload) {
             </div>
             <div>${recordPreview(review.record1)}</div>
             <div>${recordPreview(review.record2)}</div>
+            ${review.notes ? `<div class="hint-text">Note: ${review.notes}</div>` : ""}
           </div>
         `).join("") : "No review decisions have been saved for the current dataset yet."}
+      </div>
+      ${summary.total > recentReviews.length ? `
+        <div class="results-toolbar">
+          <button type="button" class="ghost-button" data-load-more-reviews>
+            Load 10 more
+          </button>
+        </div>
+      ` : ""}
+    </div>
+  `;
+}
+
+function renderScoreDiagnostics(scoreSummary = {}) {
+  const duplicateScores = scoreSummary.duplicates || {};
+  const rejectedScores = scoreSummary.rejected || {};
+  return `
+    <div class="result-block">
+      <h3>Score diagnostics</h3>
+      <div class="stats-grid">
+        <div class="stat-card">
+          <span class="mini-label">Acceptance rate</span>
+          <strong>${formatScore((scoreSummary.acceptance_rate || 0) * 100)}%</strong>
+        </div>
+        <div class="stat-card">
+          <span class="mini-label">Duplicate score range</span>
+          <strong>${formatScore(duplicateScores.min)} to ${formatScore(duplicateScores.max)}</strong>
+          <span class="hint-text">Median ${formatScore(duplicateScores.median)}</span>
+        </div>
+        <div class="stat-card">
+          <span class="mini-label">Rejected score range</span>
+          <strong>${formatScore(rejectedScores.min)} to ${formatScore(rejectedScores.max)}</strong>
+          <span class="hint-text">Median ${formatScore(rejectedScores.median)}</span>
+        </div>
       </div>
     </div>
   `;
@@ -643,8 +701,8 @@ function renderClusterSummary(clusterSummary) {
             </div>
             <div class="hint-text">
               ${cluster.member_preview && cluster.member_preview.length
-                ? `Example records: ${cluster.member_preview.join(" | ")}`
-                : "No record preview available."}
+      ? `Example records: ${cluster.member_preview.join(" | ")}`
+      : "No record preview available."}
             </div>
           </div>
         `).join("") : "No clusters formed because no duplicate pairs were predicted."}
@@ -752,17 +810,50 @@ function renderDisagreementSection(disagreement) {
       </div>
     </div>
     ${renderPairSection(
-      "Review recommended: selected model says duplicate",
-      "These pairs were flagged as duplicates by the selected model but not by the comparison model.",
-      disagreement.selected_only_duplicates || [],
-      { reviewRecommended: true, reviewActions: true, sourceSection: "selected_only_disagreement" }
-    )}
+    "Review recommended: selected model says duplicate",
+    "These pairs were flagged as duplicates by the selected model but not by the comparison model.",
+    disagreement.selected_only_duplicates || [],
+    { reviewRecommended: true, reviewActions: true, sourceSection: "selected_only_disagreement" }
+  )}
     ${renderPairSection(
-      "Review recommended: comparison model says duplicate",
-      "These pairs were flagged as duplicates by the comparison model but not by the selected model.",
-      disagreement.comparison_only_duplicates || [],
-      { reviewRecommended: true, reviewActions: true, sourceSection: "comparison_only_disagreement" }
-    )}
+    "Review recommended: comparison model says duplicate",
+    "These pairs were flagged as duplicates by the comparison model but not by the selected model.",
+    disagreement.comparison_only_duplicates || [],
+    { reviewRecommended: true, reviewActions: true, sourceSection: "comparison_only_disagreement" }
+  )}
+  `;
+}
+
+function renderDeeperAnalysis(payload, clusterSummary) {
+  const hasDisagreement = Boolean(payload.disagreement_analysis?.requested);
+  return `
+    <div class="result-block">
+      <div class="section-header-inline">
+        <div>
+          <h3>Deeper analysis</h3>
+          <p class="section-text">
+            Optional diagnostics for cluster structure, score behavior, and model disagreements.
+          </p>
+        </div>
+        <button
+          type="button"
+          class="ghost-button"
+          data-toggle-deeper-analysis
+        >
+          ${state.deeperAnalysisExpanded ? "Hide deeper analysis" : "Show deeper analysis"}
+        </button>
+      </div>
+      ${state.deeperAnalysisExpanded ? `
+        ${renderScoreDiagnostics(payload.score_summary || {})}
+        ${renderPatternSummary(payload.duplicate_pattern_summary || [])}
+        ${renderClusterSummary(clusterSummary)}
+        ${hasDisagreement ? renderDisagreementSection(payload.disagreement_analysis) : ""}
+      ` : `
+        <div class="hint-text">
+          Deeper analysis is hidden by default to keep the product view focused on operational decisions.
+        </div>
+      `}
+    </div>
   `;
 }
 
@@ -776,21 +867,26 @@ function renderFindResults(payload) {
     three_plus_record_cluster_count: 0,
     top_clusters: [],
   };
+  const reviewSummary = payload.review_summary || state.reviewSummary || {
+    total: 0,
+    accepted_duplicate_count: 0,
+    rejected_duplicate_count: 0,
+    uncertain_count: 0,
+  };
+  const reviewQueueState = buildReviewQueue(payload);
 
   root.innerHTML = `
     <div class="results-stack">
-      ${renderScoreSummary(payload.score_summary, clusterSummary, payload)}
-      ${renderResultActions(payload)}
-      ${renderPairSection(
-        "High-confidence duplicates",
-        "The strongest predicted duplicates in this search run. These are the best candidates for automatic merges.",
-        payload.high_confidence_duplicates || []
-      )}
-      ${renderReviewWorkflow(payload)}
+      ${renderOverviewSummary(payload, clusterSummary, reviewQueueState, reviewSummary)}
       ${renderRepresentativeCases(payload.representative_cases || {})}
-      ${renderPatternSummary(payload.duplicate_pattern_summary || [])}
-      ${renderClusterSummary(clusterSummary)}
-      ${payload.disagreement_analysis?.requested ? renderDisagreementSection(payload.disagreement_analysis) : ""}
+      ${renderPairSection(
+    "High-confidence duplicates",
+    "The strongest predicted duplicates in this search run. These are the best candidates for automatic merges.",
+    payload.high_confidence_duplicates || []
+  )}
+      ${renderReviewWorkflow(payload)}
+      ${renderResultActions(payload)}
+      ${renderDeeperAnalysis(payload, clusterSummary)}
     </div>
   `;
 }
@@ -811,9 +907,9 @@ function renderCheckResults(payload) {
           <span class="badge">Preview capped at ${MAX_DISPLAY_ROWS}</span>
         </div>
         <p><strong>Submitted entry:</strong> ${Object.entries(payload.entry)
-          .filter(([, value]) => value)
-          .map(([key, value]) => `${key}=${value}`)
-          .join(", ")}</p>
+      .filter(([, value]) => value)
+      .map(([key, value]) => `${key}=${value}`)
+      .join(", ")}</p>
       </div>
       <div class="result-block">
         <h3>Top matches</h3>
@@ -836,6 +932,39 @@ function renderCheckResults(payload) {
   `;
 }
 
+function collectFindResultPairs(payload) {
+  if (!payload) {
+    return [];
+  }
+  return [
+    ...(payload.high_confidence_duplicates || []),
+    ...(payload.borderline_duplicates || []),
+    ...(payload.near_miss_non_duplicates || []),
+    ...(payload.review_queue || []),
+    ...(payload.exports?.duplicates || []),
+    ...(payload.exports?.review || []),
+    ...(payload.disagreement_analysis?.selected_only_duplicates || []),
+    ...(payload.disagreement_analysis?.comparison_only_duplicates || []),
+  ];
+}
+
+function clearReviewStatesInPayload(payload) {
+  for (const pair of collectFindResultPairs(payload)) {
+    delete pair.review_state;
+  }
+}
+
+async function loadRecentReviews(limit = state.recentReviewLimit) {
+  const payload = await fetchJson(`/reviews?limit=${limit}`);
+  state.reviewSummary = payload.review_summary || state.reviewSummary;
+  state.recentReviews = payload.reviews || [];
+  state.recentReviewLimit = limit;
+  if (state.lastFindPayload) {
+    state.lastFindPayload.review_summary = state.reviewSummary;
+    state.lastFindPayload.recent_reviews = state.recentReviews;
+  }
+}
+
 async function refreshAppState(showInfo = false) {
   const payload = await fetchJson("/app/state");
   state.models = payload.models || [];
@@ -843,6 +972,7 @@ async function refreshAppState(showInfo = false) {
   state.defaults = payload.defaults || null;
   state.reviewSummary = payload.review_summary || null;
   state.recentReviews = payload.recent_reviews || [];
+  state.recentReviewLimit = 10;
   state.selectedModel = state.selectedModel || chooseDefaultModel(state.models, payload.defaults?.preferred_model);
   renderDatasetSummary();
   syncBlockingControlsFromModel();
@@ -927,6 +1057,8 @@ async function runFindDuplicates() {
   state.lastFindPayload = payload;
   state.reviewSummary = payload.review_summary || state.reviewSummary;
   state.recentReviews = payload.recent_reviews || state.recentReviews;
+  state.recentReviewLimit = 10;
+  state.deeperAnalysisExpanded = false;
   renderFindResults(payload);
   showBanner("Duplicate search completed.");
 }
@@ -1050,6 +1182,53 @@ function wireEvents() {
       }
     }
 
+    const toggleDeeperAnalysisButton = event.target.closest("[data-toggle-deeper-analysis]");
+    if (toggleDeeperAnalysisButton && state.lastFindPayload) {
+      state.deeperAnalysisExpanded = !state.deeperAnalysisExpanded;
+      renderFindResults(state.lastFindPayload);
+      return;
+    }
+
+    const loadMoreReviewsButton = event.target.closest("[data-load-more-reviews]");
+    if (loadMoreReviewsButton) {
+      hideBanner();
+      loadRecentReviews(state.recentReviewLimit + 10)
+        .then(() => {
+          if (state.lastFindPayload) {
+            renderFindResults(state.lastFindPayload);
+          }
+        })
+        .catch((error) => {
+          showBanner(formatErrorMessage(error.message), "error");
+        });
+      return;
+    }
+
+    const resetReviewsButton = event.target.closest("[data-reset-reviews]");
+    if (resetReviewsButton) {
+      if (!window.confirm("Clear all saved review decisions for the currently loaded dataset?")) {
+        return;
+      }
+      hideBanner();
+      fetchJson("/reviews", { method: "DELETE" })
+        .then((payload) => {
+          state.reviewSummary = payload.review_summary || state.reviewSummary;
+          state.recentReviews = payload.recent_reviews || [];
+          state.recentReviewLimit = 10;
+          if (state.lastFindPayload) {
+            clearReviewStatesInPayload(state.lastFindPayload);
+            state.lastFindPayload.review_summary = state.reviewSummary;
+            state.lastFindPayload.recent_reviews = state.recentReviews;
+            renderFindResults(state.lastFindPayload);
+          }
+          showBanner(payload.message || "Review decisions cleared.");
+        })
+        .catch((error) => {
+          showBanner(formatErrorMessage(error.message), "error");
+        });
+      return;
+    }
+
     const queueModeButton = event.target.closest("[data-review-queue-mode]");
     if (queueModeButton && state.lastFindPayload) {
       state.reviewQueueMode = queueModeButton.dataset.reviewQueueMode;
@@ -1082,27 +1261,22 @@ function wireEvents() {
     })
       .then((payload) => {
         const savedReview = payload.saved_review;
-        const sectionsToUpdate = [
-          ...(state.lastFindPayload.high_confidence_duplicates || []),
-          ...(state.lastFindPayload.borderline_duplicates || []),
-          ...(state.lastFindPayload.near_miss_non_duplicates || []),
-          ...(state.lastFindPayload.review_queue || []),
-          ...(state.lastFindPayload.exports?.duplicates || []),
-          ...(state.lastFindPayload.exports?.review || []),
-          ...(state.lastFindPayload.disagreement_analysis?.selected_only_duplicates || []),
-          ...(state.lastFindPayload.disagreement_analysis?.comparison_only_duplicates || []),
-        ];
-        for (const pair of sectionsToUpdate) {
+        for (const pair of collectFindResultPairs(state.lastFindPayload)) {
           if (pair.pair_key === savedReview.pair_key) {
             pair.review_state = savedReview;
           }
         }
         state.reviewSummary = payload.review_summary || state.reviewSummary;
-        state.recentReviews = payload.recent_reviews || state.recentReviews;
-        state.lastFindPayload.review_summary = state.reviewSummary;
-        state.lastFindPayload.recent_reviews = state.recentReviews;
-        renderFindResults(state.lastFindPayload);
-        showBanner(`Saved review decision: ${savedReview.decision_label}.`);
+        loadRecentReviews(state.recentReviewLimit)
+          .catch(() => {
+            state.recentReviews = payload.recent_reviews || state.recentReviews;
+          })
+          .finally(() => {
+            state.lastFindPayload.review_summary = state.reviewSummary;
+            state.lastFindPayload.recent_reviews = state.recentReviews;
+            renderFindResults(state.lastFindPayload);
+            showBanner(`Saved review decision: ${savedReview.decision_label}.`);
+          });
       })
       .catch((error) => {
         showBanner(formatErrorMessage(error.message), "error");

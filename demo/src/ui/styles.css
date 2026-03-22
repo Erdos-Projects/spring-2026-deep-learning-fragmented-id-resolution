@@ -501,6 +501,17 @@ select:focus {
   border: 1px solid var(--border);
 }
 
+.section-header-inline {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.section-header-inline h3 {
+  margin: 0 0 8px;
+}
+
 .results-toolbar {
   display: flex;
   flex-wrap: wrap;
