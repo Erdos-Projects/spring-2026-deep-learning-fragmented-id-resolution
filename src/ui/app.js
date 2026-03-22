@@ -21,6 +21,9 @@ const state = {
   recentReviews: [],
   reviewQueueMode: "pending",
   recentReviewLimit: 10,
+  highConfidenceExpanded: true,
+  reviewQueueExpanded: true,
+  recentReviewsExpanded: true,
   deeperAnalysisExpanded: false,
 };
 
@@ -406,6 +409,38 @@ function renderThresholdDecision(pair, threshold) {
   `;
 }
 
+function renderCollapsibleSection({
+  title,
+  subtitle,
+  expanded,
+  toggleAttr,
+  bodyHtml,
+  collapsedHint,
+  expandedLabel = "Hide section",
+  collapsedLabel = "Show section",
+}) {
+  return `
+    <div class="result-block">
+      <div class="section-header-inline">
+        <div>
+          <h3>${title}</h3>
+          <p class="section-text">${subtitle}</p>
+        </div>
+        <button
+          type="button"
+          class="ghost-button"
+          ${toggleAttr}
+        >
+          ${expanded ? expandedLabel : collapsedLabel}
+        </button>
+      </div>
+      ${expanded
+        ? bodyHtml
+        : `<div class="hint-text">${collapsedHint || "This section is hidden. Expand it to inspect the current run."}</div>`}
+    </div>
+  `;
+}
+
 function renderPairSection(title, subtitle, rows = [], options = {}) {
   const displayRows = clampRows(rows);
   const reviewNote = options.reviewRecommended
@@ -416,10 +451,7 @@ function renderPairSection(title, subtitle, rows = [], options = {}) {
       </div>
     `
     : "";
-  return `
-    <div class="result-block">
-      <h3>${title}</h3>
-      <p class="section-text">${subtitle} Showing up to ${MAX_DISPLAY_ROWS} rows.</p>
+  const sectionBody = `
       ${reviewNote}
       <table class="results-table">
         <thead>
@@ -453,6 +485,25 @@ function renderPairSection(title, subtitle, rows = [], options = {}) {
           `}
         </tbody>
       </table>
+  `;
+  if (options.collapsible) {
+    return renderCollapsibleSection({
+      title,
+      subtitle: `${subtitle} Showing up to ${MAX_DISPLAY_ROWS} rows.`,
+      expanded: options.collapsible.expanded,
+      toggleAttr: options.collapsible.toggleAttr,
+      expandedLabel: options.collapsible.expandedLabel,
+      collapsedLabel: options.collapsible.collapsedLabel,
+      collapsedHint: options.collapsible.collapsedHint
+        || `This section is hidden. Expand it to inspect up to ${MAX_DISPLAY_ROWS} rows from the current run.`,
+      bodyHtml: sectionBody,
+    });
+  }
+  return `
+    <div class="result-block">
+      <h3>${title}</h3>
+      <p class="section-text">${subtitle} Showing up to ${MAX_DISPLAY_ROWS} rows.</p>
+      ${sectionBody}
     </div>
   `;
 }
@@ -617,40 +668,56 @@ function renderReviewWorkflow(payload) {
       </div>
     </div>
     ${renderPairSection(
-    "Human review queue",
-    state.reviewQueueMode === "pending"
-      ? `Near-threshold pairs that still need a human decision. The queue auto-fills with the next pending cases from this run.`
-      : `Near-threshold pairs from this run, including cases you have already reviewed.`,
-    reviewQueue,
-    { reviewActions: true, sourceSection: "review_queue", threshold: payload.threshold }
-  )}
-    <div class="result-block">
-      <h3>Recent review decisions</h3>
-      <p class="section-text">
-        Showing the most recent ${recentReviews.length} saved review decisions for the currently loaded dataset.
-      </p>
-      <div class="match-list">
-        ${recentReviews.length ? recentReviews.map((review) => `
-          <div class="match-card">
-            <div class="badge-row">
-              <span class="badge mono">${review.id1} / ${review.id2}</span>
-              <span class="badge ${reviewDecisionBadgeClass(review.decision)}">${review.decision_label}</span>
-              <span class="badge subtle">${review.updated_at}</span>
+     "Human review queue",
+     state.reviewQueueMode === "pending"
+       ? `Near-threshold pairs that still need a human decision. The queue auto-fills with the next pending cases from this run.`
+       : `Near-threshold pairs from this run, including cases you have already reviewed.`,
+     reviewQueue,
+     {
+       reviewActions: true,
+       sourceSection: "review_queue",
+       threshold: payload.threshold,
+       collapsible: {
+         expanded: state.reviewQueueExpanded,
+         toggleAttr: "data-toggle-review-queue",
+         expandedLabel: "Hide queue",
+         collapsedLabel: "Show queue",
+         collapsedHint: "The review queue is hidden. Expand it to inspect and label near-threshold cases.",
+       },
+     }
+   )}
+    ${renderCollapsibleSection({
+      title: "Recent review decisions",
+      subtitle: `Showing the most recent ${recentReviews.length} saved review decisions for the currently loaded dataset.`,
+      expanded: state.recentReviewsExpanded,
+      toggleAttr: "data-toggle-recent-reviews",
+      expandedLabel: "Hide recent decisions",
+      collapsedLabel: "Show recent decisions",
+      collapsedHint: "Recent saved review decisions are hidden. Expand this section to inspect the latest labels and notes.",
+      bodyHtml: `
+        <div class="match-list">
+          ${recentReviews.length ? recentReviews.map((review) => `
+            <div class="match-card">
+              <div class="badge-row">
+                <span class="badge mono">${review.id1} / ${review.id2}</span>
+                <span class="badge ${reviewDecisionBadgeClass(review.decision)}">${review.decision_label}</span>
+                <span class="badge subtle">${review.updated_at}</span>
+              </div>
+              <div>${recordPreview(review.record1)}</div>
+              <div>${recordPreview(review.record2)}</div>
+              ${review.notes ? `<div class="hint-text">Note: ${review.notes}</div>` : ""}
             </div>
-            <div>${recordPreview(review.record1)}</div>
-            <div>${recordPreview(review.record2)}</div>
-            ${review.notes ? `<div class="hint-text">Note: ${review.notes}</div>` : ""}
-          </div>
-        `).join("") : "No review decisions have been saved for the current dataset yet."}
-      </div>
-      ${summary.total > recentReviews.length ? `
-        <div class="results-toolbar">
-          <button type="button" class="ghost-button" data-load-more-reviews>
-            Load 10 more
-          </button>
+          `).join("") : "No review decisions have been saved for the current dataset yet."}
         </div>
-      ` : ""}
-    </div>
+        ${summary.total > recentReviews.length ? `
+          <div class="results-toolbar">
+            <button type="button" class="ghost-button" data-load-more-reviews>
+              Load 10 more
+            </button>
+          </div>
+        ` : ""}
+      `,
+    })}
   `;
 }
 
@@ -880,10 +947,19 @@ function renderFindResults(payload) {
       ${renderOverviewSummary(payload, clusterSummary, reviewQueueState, reviewSummary)}
       ${renderRepresentativeCases(payload.representative_cases || {})}
       ${renderPairSection(
-    "High-confidence duplicates",
-    "The strongest predicted duplicates in this search run. These are the best candidates for automatic merges.",
-    payload.high_confidence_duplicates || []
-  )}
+     "High-confidence duplicates",
+     "The strongest predicted duplicates in this search run. These are the best candidates for automatic merges.",
+     payload.high_confidence_duplicates || [],
+     {
+       collapsible: {
+         expanded: state.highConfidenceExpanded,
+         toggleAttr: "data-toggle-high-confidence",
+         expandedLabel: "Hide duplicates",
+         collapsedLabel: "Show duplicates",
+         collapsedHint: "High-confidence duplicates are hidden. Expand this section to inspect the strongest automatic-merge candidates.",
+       },
+     }
+   )}
       ${renderReviewWorkflow(payload)}
       ${renderResultActions(payload)}
       ${renderDeeperAnalysis(payload, clusterSummary)}
@@ -1185,6 +1261,27 @@ function wireEvents() {
     const toggleDeeperAnalysisButton = event.target.closest("[data-toggle-deeper-analysis]");
     if (toggleDeeperAnalysisButton && state.lastFindPayload) {
       state.deeperAnalysisExpanded = !state.deeperAnalysisExpanded;
+      renderFindResults(state.lastFindPayload);
+      return;
+    }
+
+    const toggleHighConfidenceButton = event.target.closest("[data-toggle-high-confidence]");
+    if (toggleHighConfidenceButton && state.lastFindPayload) {
+      state.highConfidenceExpanded = !state.highConfidenceExpanded;
+      renderFindResults(state.lastFindPayload);
+      return;
+    }
+
+    const toggleReviewQueueButton = event.target.closest("[data-toggle-review-queue]");
+    if (toggleReviewQueueButton && state.lastFindPayload) {
+      state.reviewQueueExpanded = !state.reviewQueueExpanded;
+      renderFindResults(state.lastFindPayload);
+      return;
+    }
+
+    const toggleRecentReviewsButton = event.target.closest("[data-toggle-recent-reviews]");
+    if (toggleRecentReviewsButton && state.lastFindPayload) {
+      state.recentReviewsExpanded = !state.recentReviewsExpanded;
       renderFindResults(state.lastFindPayload);
       return;
     }
