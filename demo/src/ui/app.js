@@ -19,6 +19,7 @@ const state = {
   lastFindPayload: null,
   reviewSummary: null,
   recentReviews: [],
+  representativeCasesExpanded: true,
   reviewQueueMode: "pending",
   recentReviewLimit: 10,
   highConfidenceExpanded: true,
@@ -813,9 +814,15 @@ function renderRepresentativeCases(cases = {}) {
   ].filter((item) => item.value);
 
   const largestCluster = cases.largest_cluster;
-  return `
-    <div class="result-block">
-      <h3>Representative cases</h3>
+  return renderCollapsibleSection({
+    title: "Representative cases",
+    subtitle: "Quick examples from the current run that highlight the strongest duplicate, the closest borderline duplicate, the closest rejected pair, and the largest predicted cluster.",
+    expanded: state.representativeCasesExpanded,
+    toggleAttr: "data-toggle-representative-cases",
+    expandedLabel: "Hide cases",
+    collapsedLabel: "Show cases",
+    collapsedHint: "Representative cases are hidden. Expand this section to inspect the most illustrative examples from the current run.",
+    bodyHtml: `
       <div class="case-grid">
         ${caseRows.map((item) => `
           <div class="case-card">
@@ -844,8 +851,8 @@ function renderRepresentativeCases(cases = {}) {
           </div>
         ` : ""}
       </div>
-    </div>
-  `;
+    `,
+  });
 }
 
 function renderDisagreementSection(disagreement) {
@@ -1268,6 +1275,13 @@ function wireEvents() {
     const toggleHighConfidenceButton = event.target.closest("[data-toggle-high-confidence]");
     if (toggleHighConfidenceButton && state.lastFindPayload) {
       state.highConfidenceExpanded = !state.highConfidenceExpanded;
+      renderFindResults(state.lastFindPayload);
+      return;
+    }
+
+    const toggleRepresentativeCasesButton = event.target.closest("[data-toggle-representative-cases]");
+    if (toggleRepresentativeCasesButton && state.lastFindPayload) {
+      state.representativeCasesExpanded = !state.representativeCasesExpanded;
       renderFindResults(state.lastFindPayload);
       return;
     }
