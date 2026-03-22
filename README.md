@@ -529,9 +529,12 @@ The review-oriented result panels include:
 - disagreement cards show exact matching fields and exact differing fields
 - record previews include `midl_name` when present so surname-expansion and middle-name cases are visible in the UI
 - preview sections are capped at `10` rows each for presentation clarity
+- results are ordered for product use: summary, representative cases, automatic-merge candidates, human review, exports, then optional deeper analysis
 - export buttons provide a duplicate CSV and a human-review CSV for the current run
 - a persisted human-review queue lets a reviewer mark pairs as accepted duplicate, rejected duplicate, or uncertain
-- reviewers can add optional notes and switch the queue between `Pending only` and `Show all`
+- reviewers can add optional notes, switch the queue between `Pending only` and `Show all`, and reset saved review decisions for the current dataset
+- recent saved review decisions show `10` entries at a time with a `Load 10 more` control
+- deeper analysis is collapsed by default and only expands when the user chooses to inspect diagnostics
 - review decisions are stored in a SQLite database under the runtime directory and surfaced back in the UI
 
 Start the API:

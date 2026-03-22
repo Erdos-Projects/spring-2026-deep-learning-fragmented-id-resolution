@@ -51,6 +51,19 @@ This deployment now also includes a persisted human-review workflow:
 - reviewers can add an optional note explaining the decision
 - those decisions are stored in a SQLite database under the runtime directory
 - the app shows a review queue, review counters, recent saved decisions, and a `Pending only / Show all` queue filter for the current dataset
+- recent saved decisions are shown `10` at a time with a `Load 10 more` control
+- saved review decisions can be reset for the current dataset from the UI
+
+The duplicate-search results are organized for operations rather than experimentation:
+
+1. summary cards
+2. representative cases
+3. high-confidence duplicate candidates
+4. the human-review queue
+5. export actions
+6. optional deeper analysis
+
+The `Deeper analysis` section is collapsed by default and only expands when the user explicitly opens it.
 
 ## Local run
 
