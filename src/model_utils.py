@@ -20,7 +20,7 @@ import importlib.util
 #CharCNNEncoder = model_module.CharCNNEncoder
 
 # Device configuration
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+device = torch.device('cpu')  # Use CPU by default for consistency with models
 
 # Vocabulary mapping
 chars = 'abcdefghijklmnopqrstuvwxyz0123456789 '
