@@ -124,6 +124,7 @@ def create_app(service: Optional[DuplicateDetectionService] = None) -> FastAPI:
                 "check_entry": "POST /duplicates/check-entry",
                 "save_review": "POST /reviews",
                 "list_reviews": "GET /reviews",
+                "clear_reviews": "DELETE /reviews",
             },
         }
 
@@ -209,6 +210,17 @@ def create_app(service: Optional[DuplicateDetectionService] = None) -> FastAPI:
             "review_summary": app.state.service.review_summary(),
             "reviews": app.state.service.list_review_decisions(limit=limit),
         }
+
+    @app.delete("/reviews")
+    def clear_reviews():
+        try:
+            return app.state.service.clear_review_decisions()
+        except DatasetNotLoadedError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except DeploymentError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     @app.post("/reviews")
     def save_review(request: ReviewDecisionRequest):

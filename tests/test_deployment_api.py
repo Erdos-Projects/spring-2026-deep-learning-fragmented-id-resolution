@@ -177,6 +177,12 @@ def test_api_upload_find_and_check_entry_with_tfidf():
         assert list_reviews_payload["reviews"][0]["decision"] == "accept_duplicate"
         assert list_reviews_payload["reviews"][0]["notes"] == "Looks like the same voter after address normalization."
 
+        clear_reviews_response = client.delete("/reviews")
+        assert clear_reviews_response.status_code == 200
+        clear_reviews_payload = clear_reviews_response.json()
+        assert clear_reviews_payload["review_summary"]["total"] == 0
+        assert clear_reviews_payload["recent_reviews"] == []
+
         entry_response = client.post(
             "/duplicates/check-entry",
             json={

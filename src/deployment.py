@@ -1023,6 +1023,16 @@ class DuplicateDetectionService:
         dataset_source = self.current_dataset.source_name if self.current_dataset is not None else None
         return self.review_store.list_decisions(dataset_source=dataset_source, limit=limit)
 
+    def clear_review_decisions(self) -> Dict[str, Any]:
+        runtime_dataset = self._require_dataset()
+        cleared = self.review_store.clear_decisions(dataset_source=runtime_dataset.source_name)
+        return {
+            "message": "Review decisions cleared for the current dataset.",
+            "cleared": cleared,
+            "review_summary": self.review_summary(),
+            "recent_reviews": self.list_review_decisions(limit=10),
+        }
+
     def save_review_decision(
         self,
         *,

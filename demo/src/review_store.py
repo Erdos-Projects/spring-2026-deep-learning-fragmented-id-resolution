@@ -298,6 +298,42 @@ class ReviewStore:
             "counts_by_decision": breakdown,
         }
 
+    def clear_decisions(self, *, dataset_source: Optional[str] = None) -> Dict[str, Any]:
+        with self._connect() as connection:
+            if dataset_source:
+                decision_total_row = connection.execute(
+                    "SELECT COUNT(*) AS total FROM review_decisions WHERE dataset_source = ?",
+                    (dataset_source,),
+                ).fetchone()
+                event_total_row = connection.execute(
+                    "SELECT COUNT(*) AS total FROM review_events WHERE dataset_source = ?",
+                    (dataset_source,),
+                ).fetchone()
+                connection.execute(
+                    "DELETE FROM review_decisions WHERE dataset_source = ?",
+                    (dataset_source,),
+                )
+                connection.execute(
+                    "DELETE FROM review_events WHERE dataset_source = ?",
+                    (dataset_source,),
+                )
+            else:
+                decision_total_row = connection.execute(
+                    "SELECT COUNT(*) AS total FROM review_decisions"
+                ).fetchone()
+                event_total_row = connection.execute(
+                    "SELECT COUNT(*) AS total FROM review_events"
+                ).fetchone()
+                connection.execute("DELETE FROM review_decisions")
+                connection.execute("DELETE FROM review_events")
+            connection.commit()
+
+        return {
+            "cleared_decisions": int(decision_total_row["total"]) if decision_total_row else 0,
+            "cleared_events": int(event_total_row["total"]) if event_total_row else 0,
+            "dataset_source": dataset_source,
+        }
+
     def _row_to_payload(self, row: sqlite3.Row) -> Dict[str, Any]:
         if row is None:
             return {}
