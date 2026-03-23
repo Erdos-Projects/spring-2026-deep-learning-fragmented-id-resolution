@@ -19,12 +19,11 @@ const state = {
   lastFindPayload: null,
   reviewSummary: null,
   recentReviews: [],
-  representativeCasesExpanded: true,
   reviewQueueMode: "pending",
   recentReviewLimit: 10,
-  highConfidenceExpanded: true,
-  reviewQueueExpanded: true,
-  recentReviewsExpanded: true,
+  highConfidenceExpanded: false,
+  reviewQueueExpanded: false,
+  recentReviewsExpanded: false,
   deeperAnalysisExpanded: false,
 };
 
@@ -521,12 +520,11 @@ function renderOverviewSummary(payload, clusterSummary, reviewQueueState, review
     <div class="result-block">
       <h3>Summary</h3>
       <p class="section-text">
-        Overview of the current duplicate-search run, including the strongest automatic-merge candidates and the queue
-        of near-threshold cases that need human review.
+        Main outcome of the current duplicate-search run, including automatic-merge candidates and near-threshold cases
+        that still need human review.
       </p>
       <div class="badge-row">
         <span class="badge">Threshold: ${formatScore(payload.threshold)}</span>
-        <span class="badge">Preview capped at ${MAX_DISPLAY_ROWS}</span>
       </div>
       <div class="stats-grid">
         <div class="stat-card">
@@ -797,64 +795,6 @@ function renderPatternSummary(patterns = []) {
   `;
 }
 
-function renderRepresentativeCases(cases = {}) {
-  const caseRows = [
-    {
-      label: "Highest-confidence duplicate",
-      value: cases.highest_confidence_duplicate,
-    },
-    {
-      label: "Most borderline duplicate",
-      value: cases.most_borderline_duplicate,
-    },
-    {
-      label: "Closest rejected pair",
-      value: cases.closest_rejected_pair,
-    },
-  ].filter((item) => item.value);
-
-  const largestCluster = cases.largest_cluster;
-  return renderCollapsibleSection({
-    title: "Representative cases",
-    subtitle: "Quick examples from the current run that highlight the strongest duplicate, the closest borderline duplicate, the closest rejected pair, and the largest predicted cluster.",
-    expanded: state.representativeCasesExpanded,
-    toggleAttr: "data-toggle-representative-cases",
-    expandedLabel: "Hide cases",
-    collapsedLabel: "Show cases",
-    collapsedHint: "Representative cases are hidden. Expand this section to inspect the most illustrative examples from the current run.",
-    bodyHtml: `
-      <div class="case-grid">
-        ${caseRows.map((item) => `
-          <div class="case-card">
-            <strong>${item.label}</strong>
-            <div class="badge-row">
-              <span class="badge mono">${item.value.id1} / ${item.value.id2}</span>
-              <span class="badge">Score: ${formatScore(item.value.score)}</span>
-            </div>
-            ${renderSignalBadges(item.value.signals)}
-            <div>${recordPreview(item.value.record1)}</div>
-            <div>${recordPreview(item.value.record2)}</div>
-          </div>
-        `).join("")}
-        ${largestCluster ? `
-          <div class="case-card">
-            <strong>Largest predicted cluster</strong>
-            <div class="badge-row">
-              <span class="badge">${largestCluster.cluster_id}</span>
-              <span class="badge">${largestCluster.size} records</span>
-            </div>
-            <div class="badge-row">
-              ${(largestCluster.shared_characteristics || []).map((item) => `
-                <span class="badge">${item.attribute}: ${item.value}</span>
-              `).join("")}
-            </div>
-          </div>
-        ` : ""}
-      </div>
-    `,
-  });
-}
-
 function renderDisagreementSection(disagreement) {
   if (!disagreement || !disagreement.available) {
     return `
@@ -952,7 +892,6 @@ function renderFindResults(payload) {
   root.innerHTML = `
     <div class="results-stack">
       ${renderOverviewSummary(payload, clusterSummary, reviewQueueState, reviewSummary)}
-      ${renderRepresentativeCases(payload.representative_cases || {})}
       ${renderPairSection(
      "High-confidence duplicates",
      "The strongest predicted duplicates in this search run. These are the best candidates for automatic merges.",
@@ -1275,13 +1214,6 @@ function wireEvents() {
     const toggleHighConfidenceButton = event.target.closest("[data-toggle-high-confidence]");
     if (toggleHighConfidenceButton && state.lastFindPayload) {
       state.highConfidenceExpanded = !state.highConfidenceExpanded;
-      renderFindResults(state.lastFindPayload);
-      return;
-    }
-
-    const toggleRepresentativeCasesButton = event.target.closest("[data-toggle-representative-cases]");
-    if (toggleRepresentativeCasesButton && state.lastFindPayload) {
-      state.representativeCasesExpanded = !state.representativeCasesExpanded;
       renderFindResults(state.lastFindPayload);
       return;
     }
