@@ -3,36 +3,26 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Fragmented-ID-Resolution</title>
+  <title>LinkID</title>
   <link rel="stylesheet" href="/assets/styles.css">
 </head>
 <body>
   <div class="page-shell">
     <header class="hero">
       <div class="hero-copy">
-        <p class="eyebrow">Fragmented-ID-Resolution</p>
-        <h1>Fragmented-ID-Resolution for Voter Registration Records</h1>
+        <p class="eyebrow">Identity matching</p>
+        <h1>LinkID</h1>
         <p class="hero-text">
-          This product uses our tuned Siamese duplicate-detection model to scan voter-registration datasets for likely
-          duplicates and to help a clerk check whether one incoming registration already exists in the loaded database.
+          Detects and ranks duplicate identities across messy datasets for accurate, scalable identity resolution.
         </p>
         <ol class="hero-steps">
           <li>Load a voter-registration dataset by path or file upload.</li>
           <li>Choose whether you want a full duplicate scan or a single-record check.</li>
           <li>Review the summary, confirm strong duplicates, and handle human-review cases when needed.</li>
+          <li>Export duplicate and review queues for downstream action.</li>
         </ol>
-      </div>
-      <div class="hero-panel">
-        <div class="mini-stat">
-          <span class="mini-label">Current dataset</span>
-          <strong id="hero-dataset-status">Not loaded</strong>
-        </div>
-        <div class="mini-stat">
-          <span class="mini-label">Product modes</span>
-          <strong>Bulk scan and clerk check</strong>
-        </div>
         <div class="hero-links">
-          <a href="/docs" target="_blank" rel="noreferrer">Open API Docs</a>
+          <a href="/docs" target="_blank" rel="noreferrer">Technical API docs</a>
         </div>
       </div>
     </header>

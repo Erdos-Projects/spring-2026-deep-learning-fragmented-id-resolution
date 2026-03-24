@@ -77,7 +77,10 @@ function getSelectedModel() {
 function renderDatasetSummary() {
   const card = byId("dataset-status-card");
   const target = byId("dataset-summary");
-  byId("hero-dataset-status").textContent = state.dataset ? `${state.dataset.record_count} records` : "Not loaded";
+  const heroDatasetStatus = byId("hero-dataset-status");
+  if (heroDatasetStatus) {
+    heroDatasetStatus.textContent = state.dataset ? `${state.dataset.record_count} records` : "Not loaded";
+  }
   if (!state.dataset) {
     card.classList.add("hidden");
     target.innerHTML = "";

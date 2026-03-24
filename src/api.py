@@ -88,7 +88,7 @@ def create_app(service: Optional[DuplicateDetectionService] = None) -> FastAPI:
         yield
 
     app = FastAPI(
-        title="Fragmented-ID-Resolution API",
+        title="LinkID API",
         version="1.0.0",
         description=(
             "Upload a dataset, find likely duplicates inside it, or check a new record against it "
@@ -109,7 +109,7 @@ def create_app(service: Optional[DuplicateDetectionService] = None) -> FastAPI:
     @app.get("/api/info")
     def api_info():
         return {
-            "service": "Fragmented-ID-Resolution API",
+            "service": "LinkID API",
             "available_models": app.state.service.list_models(),
             "loaded_dataset": None
             if app.state.service.current_dataset is None
