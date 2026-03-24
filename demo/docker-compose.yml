@@ -1,0 +1,14 @@
+services:
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      FRAGMENTED_ID_RUNTIME_DIR: /app/data/runtime
+      FRAGMENTED_ID_DEFAULT_DATASET: /app/data/processed/ncvoters_prepared.tsv
+    volumes:
+      - fragmented_id_runtime:/app/data/runtime
+    restart: unless-stopped
+
+volumes:
+  fragmented_id_runtime:
