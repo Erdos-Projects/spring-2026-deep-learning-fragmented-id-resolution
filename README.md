@@ -35,7 +35,7 @@ Our best model achieves **99.4% F1 overall** and **98.3% F1 on hard cases**, wit
 
 ## Dataset
 
-We utilize the [Hasso Plattner Institute (HPI)](https://hpi.de/naumann/projects/data-quality-and-cleansing/duplicate-detection.html) North Carolina State Board of Election (NCSBE) voter registration dataset, a standard benchmark for duplicate detection research.
+We utilize the [Hasso Plattner Institute (HPI)](https://hpi.de/naumann/projects/repeatability/datasets/ncvoters-dataset.html) North Carolina State Board of Election (NCSBE) voter registration dataset, a standard benchmark for duplicate detection research.
 
 **Dataset summary:**
 
