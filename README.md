@@ -5,8 +5,8 @@ This repository is for the Fragmented ID Resolution project as part of the fulfi
 **Team members:** [Noimot Bakare Ayoub](https://github.com/NoimotBAyoub), [Pedro Fontanarrosa](https://github.com/Fontanapink), [Arpith Shanbhag](https://github.com/anunknownpleasure), [Dharineesh Somisetty](https://github.com/Dharineesh-Somisetty)
 
 **Presentation Deliverables**
-- [Presentation slides PDF](presentation/Fragmented_ID_Resolution_Erdos_SP26.pdf)
-- [Executive Summary](presentation/Executive_Summary-Fragmented_ID_Resolution.pdf)
+- [Presentation slides PDF](<deliverables/Fragmented ID Resolution Using Deep Learning.pdf>)
+- [Executive Summary](<deliverables/Executive Summary FragmentedID.pdf>)
 
 # Contents
 
@@ -227,48 +227,42 @@ uvicorn src.api:app --reload --host 0.0.0.0 --port 8000
 - Web app: `http://127.0.0.1:8000/`
 - API docs: `http://127.0.0.1:8000/docs`
 
-See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for detailed API usage.
+See [demo/README.md](demo/README.md) for detailed runtime and API usage notes.
 
 
 ## Files
 
 ### Core Source Code
 
-- [`src/model.py`](src/model.py): Siamese network architecture (BiLSTM and CharCNN encoders)
-- [`src/train.py`](src/train.py): Training pipeline with hard-example weighting and early stopping
-- [`src/evaluate.py`](src/evaluate.py): Evaluation and threshold tuning
-- [`src/baseline_tfidf.py`](src/baseline_tfidf.py): TF-IDF distance baseline
-- [`src/blocking.py`](src/blocking.py): Shared blocking for candidate generation
-- [`src/hard_examples.py`](src/hard_examples.py): Hard-example mining logic
-- [`src/api.py`](src/api.py): FastAPI deployment serving layer
-- [`src/deployment.py`](src/deployment.py): Deployment inference pipeline
-- [`src/review_store.py`](src/review_store.py): SQLite-backed human review storage
+- [`demo/src/model.py`](demo/src/model.py): Siamese network architecture used by the deployment bundle
+- [`demo/src/dataset.py`](demo/src/dataset.py): Dataset preparation and pair handling for inference
+- [`demo/src/data_utils.py`](demo/src/data_utils.py): Data loading and preprocessing utilities
+- [`demo/src/api.py`](demo/src/api.py): FastAPI deployment serving layer
+- [`demo/src/deployment.py`](demo/src/deployment.py): Deployment inference pipeline
+- [`demo/src/review_store.py`](demo/src/review_store.py): SQLite-backed human review storage
+- [`demo/src/ui/index.html`](demo/src/ui/index.html): Web UI markup
+- [`demo/src/ui/app.js`](demo/src/ui/app.js): Client-side duplicate-review interactions
+- [`demo/src/ui/styles.css`](demo/src/ui/styles.css): UI styling
 
 ### Scripts
 
-- [`scripts/ncvoters_preprocess_and_eda.py`](scripts/ncvoters_preprocess_and_eda.py): Data preprocessing and attribute EDA
-- [`scripts/pair_eda.py`](scripts/pair_eda.py): Pair-level exploratory analysis
-- [`scripts/extended_eda.py`](scripts/extended_eda.py): Extended EDA
-- [`scripts/sync_demo_bundle.py`](scripts/sync_demo_bundle.py): Sync portable demo bundle
+- Not included in this demo-focused repository snapshot
 
 ### Configuration and Setup
 
-- [`environment.yml`](environment.yml): Conda environment specification
-- [`requirements-deploy.txt`](requirements-deploy.txt): Deployment dependencies
-- [`Dockerfile`](Dockerfile): Container build for deployment
-- [`docker-compose.yml`](docker-compose.yml): One-command local demo
+- [`demo/requirements.txt`](demo/requirements.txt): Deployment dependencies
+- [`demo/Dockerfile`](demo/Dockerfile): Container build for deployment
+- [`demo/docker-compose.yml`](demo/docker-compose.yml): One-command local demo
 
 ### Documentation
 
-- [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md): Detailed deployment and API usage guide
-- [`docs/methodology.md`](docs/methodology.md): Full project methodology
-- [`docs/EDA_INSIGHTS.md`](docs/EDA_INSIGHTS.md): Exploratory data analysis insights
-- [`docs/REPO_WALKTHROUGH.md`](docs/REPO_WALKTHROUGH.md): Repository structure walkthrough
+- [`README.md`](README.md): Project overview, methods, and results
+- [`demo/README.md`](demo/README.md): Demo bundle usage and runtime details
 
 ### Tests
 
 ```bash
-pytest -q
+cd demo && pytest -q
 ```
 
 Coverage includes pair integrity checks, split correctness (entity-disjoint leakage), model I/O shape checks, metric correctness vs. scikit-learn, and end-to-end smoke tests.
