@@ -1,4 +1,18 @@
-# Demo Bundle
+---
+title: LinkID
+emoji: 🪪
+colorFrom: teal
+colorTo: blue
+sdk: docker
+app_port: 8000
+pinned: false
+---
+
+# LinkID
+
+Identity matching.
+
+Detects and ranks duplicate identities across messy datasets for accurate, scalable identity resolution.
 
 This folder is a self-contained product demo bundle for the duplicate-detection UI.
 
@@ -27,6 +41,7 @@ The app will:
 - start the web UI
 - auto-load the bundled NCVoters prepared dataset
 - persist human-review decisions in a Docker volume
+- use the same default startup settings that can be used in a Hugging Face Docker Space
 
 ## Run locally without Docker
 
@@ -35,6 +50,19 @@ Create an environment with the required packages, then from `demo/` run:
 ```powershell
 uvicorn src.api:app --reload --host 0.0.0.0 --port 8000
 ```
+
+## Deploy to Hugging Face Spaces
+
+Create a new **Docker Space** in your Hugging Face account, then copy the contents of this `demo/` folder into the root of that Space repository.
+
+The Space will:
+
+- build from `Dockerfile`
+- serve the app on port `8000`
+- auto-load `data/processed/ncvoters_prepared.tsv`
+- store review decisions in the Space container's local runtime directory
+
+For a class demo, that local review storage is fine even though it is not persistent across all Space rebuilds or restarts.
 
 ## Keeping this folder updated
 

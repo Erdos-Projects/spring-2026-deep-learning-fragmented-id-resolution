@@ -4,6 +4,8 @@ WORKDIR /app
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
+ENV FRAGMENTED_ID_RUNTIME_DIR=/app/data/runtime
+ENV FRAGMENTED_ID_DEFAULT_DATASET=/app/data/processed/ncvoters_prepared.tsv
 
 COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
